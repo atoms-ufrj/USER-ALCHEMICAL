@@ -32,7 +32,6 @@
 #include "timer.h"
 #include "neighbor.h"
 #include "fix_nh.h"
-#include "fix_hmc.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
