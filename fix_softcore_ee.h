@@ -56,11 +56,8 @@ class FixSoftcoreEE : public Fix {
   class FixHMC *fix_ee_hmc;
   void add_new_compute();
  protected:
-  int external_force_clear;   // clear forces locally or externally
-
-  int torqueflag,erforceflag;
-  
-  int e_flag,rho_flag;
+  int triclinic;                    // 0 if domain is orthog, 1 if triclinic
+  int torqueflag,extraflag;
 
   virtual void force_clear();
 };
