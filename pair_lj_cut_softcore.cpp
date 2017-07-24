@@ -148,7 +148,6 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
       rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
 //if (itype == 2 && jtype == 1)  {printf("%d %d %12.5f\n",itype,jtype,factor_lj);
-//printf("HOLAAAAAAAAAAAAAAAAAAAAAAAAAA");}
 
       if (rsq < cutsq[itype][jtype]) {
 
@@ -171,7 +170,6 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
 	  evdwl = factor_lj*(sinv*(lj3[itype][jtype]*sinv -
 	          lj4[itype][jtype]) - offset[itype][jtype]);
 
-//printf("%d\n GRIDFLAG",gridflag);
         if (gridflag)
           if (linkflag[itype][jtype] != 0)
             for (k = 0; k < gridsize; k++) {
@@ -918,7 +916,6 @@ void *PairLJCutSoftcore::extract(const char *str, int &dim)
   
 
   if (strcmp(str,"gridsize") == 0) {
-    printf("%d VOLTEI \n", gridsize);
     return (void *) &gridsize;
   }
   else if (strcmp(str,"gridflag") == 0) {

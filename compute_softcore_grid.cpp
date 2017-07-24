@@ -40,8 +40,6 @@ ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) :
   int *size = (int*) force->pair->extract("gridsize",dim);
   size_vector = *size;
 
-  printf("%d GRIDSIZE \n", size_vector);  
-
   if (size_vector == 0)
   error->all(FLERR,"Compute softcore/grid error: lambda grid not defined");
   peflag = 1;
