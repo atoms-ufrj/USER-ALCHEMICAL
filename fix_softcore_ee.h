@@ -40,25 +40,21 @@ class FixSoftcoreEE : public Fix {
   int calculate;
   int current_node;
   int seed;
-  int gridsize,acfreq;
-  double minus_beta,ratiocriteria;
+  int gridsize;
+  double minus_beta;
   double *weight;
   double *lambdanode;
   char *lambda_arg[4];
   int downhill;
-  int idump;
-  FILE *ee_file;
   int nvt_flag, hmc_flag;
   RanPark *random;
   class Compute *pe;
   void change_node(int);
-  class FixNVT *fix_ee_nvt;
-  class FixHMC *fix_ee_hmc;
   void add_new_compute();
  protected:
-  int triclinic;                    // 0 if domain is orthog, 1 if triclinic
+  int triclinic;
   int torqueflag,extraflag;
-
+  int vflag_local;
   virtual void force_clear();
 };
 

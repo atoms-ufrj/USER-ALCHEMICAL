@@ -11,19 +11,17 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-// TODO:
-// 1) Eliminar saíde em arquivo (usar somente saída via compute_vector)
-// 2) Eliminar compute softcore/grid (fazer diretamente neste fix)
-// 3) Apagar recálculo de energia após troca de lambda
+/* ----------------------------------------------------------------------
+   Contributing authors: Ana J. Silveira (asilveira@plapiqui.edu.ar)
+                         Charlles R. A. Abreu (abreu@eq.ufrj.br)
+------------------------------------------------------------------------- */
 
-#include "math.h"
 #include "fix_softcore_ee.h"
 #include "update.h"
 #include "force.h"
 #include "pair.h"
 #include "error.h"
 #include "comm.h"
-#include "domain.h"
 #include "random_park.h"
 #include "string.h"
 #include "atom.h"
@@ -36,8 +34,6 @@
 #include "modify.h"
 #include "compute.h"
 #include "timer.h"
-#include "neighbor.h"
-#include "fix_nh.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -49,55 +45,32 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 {
   int dim;
   int *size = (int *) force->pair->extract("gridsize",dim);
-  gridsize = size[0];
+  gridsize = *size;
   if (gridsize == 0)
     error->all(FLERR,"fix softcore/ee: no lambda grid defined");
-  if (narg < 7)
+
+  if (narg < 6)
     error->all(FLERR,"Illegal fix softcore/ee command");
+
   nevery = force->numeric(FLERR,arg[3]);
   if (nevery <= 0)
     error->all(FLERR,"Illegal fix softcore/ee command");
-  acfreq = force->numeric(FLERR,arg[4]);
-  if (acfreq <= 0)
-   error->all(FLERR,"Illegal fix softcore/ee command");
-  seed = force->numeric(FLERR,arg[5]);
+
+  seed = force->numeric(FLERR,arg[4]);
   if (seed <= 0)
     error->all(FLERR,"Illegal fix softcore/ee command");
-  minus_beta = -1.0/(force->boltz*force->numeric(FLERR,arg[6]));
-  
-  int iarg = 7;
-  ee_file = NULL;
-  idump = 0;
-  while (iarg < narg) {
-    if (strcmp(arg[iarg],"dump") == 0) {
-      if (iarg+3 > narg)
-        error->all(FLERR,"Illegal fix softcore/ee command");
-      idump = force->numeric(FLERR,arg[iarg+1]);
-      if (idump <= 0)
-        error->all(FLERR,"Illegal fix softcore/ee command");
-      int n = strlen(arg[iarg+2]) + 1;
-      char *string = new char[n];
-      strcpy(string,arg[iarg+2]);
-      if (comm->me == 0)
-        ee_file = fopen(arg[iarg+2],"w");
-      iarg += 3;
-    }
-    else
-      error->all(FLERR,"Illegal fix softcore/ee command");
-  }
+  minus_beta = -1.0/(force->boltz*force->numeric(FLERR,arg[5]));
+
   add_new_compute();
-  ratiocriteria = 1.0/acfreq;
   scalar_flag = 1;
   global_freq = 1;
 
   // set flags for arrays to clear in force_clear()
-
   torqueflag = extraflag = 0;
   if (atom->torque_flag) torqueflag = 1;
   if (atom->avec->forceclearflag) extraflag = 1;
 
   // orthogonal vs triclinic simulation box
-
   triclinic = domain->triclinic;
 }
 
@@ -105,8 +78,6 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 
 FixSoftcoreEE::~FixSoftcoreEE()
 {
-  if (ee_file)
-    fclose(ee_file);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -152,16 +123,6 @@ void FixSoftcoreEE::init()
   downhill = 0;
 
   random = new RanPark(lmp,seed);
-
-  if (ee_file) {
-    fprintf(ee_file,"step node lambda downhill");
-    for (int k = 0; k < gridsize; k++) {
-
-      fprintf(ee_file," energy[%d]",k);
-    fprintf(ee_file,"\n");
-    }
-  }
-
 }
 /* ----------------------------------------------------------------------
  activate computes
@@ -182,11 +143,11 @@ void FixSoftcoreEE::initial_integrate(int vflag)
   int dim,*flag,step;
   step = update->ntimestep;
   calculate = step % nevery == 0;
-  if (idump != 0) 
-    calculate = calculate || (step % idump == 0);
 
   if (calculate)
     flag = (int *) force->pair->extract("gridflag",dim);
+
+  vflag_local = vflag;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -261,29 +222,10 @@ void FixSoftcoreEE::end_of_step()
       comm->reverse_comm();
       timer->stamp(Timer::COMM);
     }
-      
-    //MODIFIED :: GRID ENERGY CALCULATED AFTER NODE CHANGE
-    grid_energy = (double *) force->pair->extract("energy_grid",dim);
-    energy = new double[gridsize];
-    MPI_Allreduce(grid_energy,energy,gridsize,MPI_DOUBLE,MPI_SUM,world);
-    tail_flag = (int *) force->pair->extract("tail_flag",dim);
-    if (tail_flag[0]) {
-      etailnode = (double *) force->pair->extract("etailnode",dim);
-      volume = domain->xprd * domain->yprd * domain->zprd;
-      for (k = 0; k < gridsize; k++)  energy[k] += etailnode[k]/volume;
-    }      
-  }
-  double PE = pe->compute_scalar();
-  int step;
-  step = update->ntimestep;
 
-  if ( ee_file && (step % idump == 0) ) {
-    fprintf(ee_file,"%d %d %g %d %g", 
-           step, current_node, lambdanode[current_node], downhill, PE);
-    for (int k = 0; k < gridsize; k++)
-      fprintf(ee_file," %g",energy[k]);
-    fprintf(ee_file,"\n");
+    if (modify->n_post_force) modify->post_force(vflag_local);
   }
+
   int nextstep = update->ntimestep + nevery;
   if (nextstep <= update->laststep) 
     pe->addstep(nextstep);
