@@ -11,17 +11,17 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-// TODO:
-// 1) Apagar recálculo de energia após troca de lambda
+/* ----------------------------------------------------------------------
+   Contributing authors: Ana J. Silveira (asilveira@plapiqui.edu.ar)
+                         Charlles R. A. Abreu (abreu@eq.ufrj.br)
+------------------------------------------------------------------------- */
 
-#include "math.h"
 #include "fix_softcore_ee.h"
 #include "update.h"
 #include "force.h"
 #include "pair.h"
 #include "error.h"
 #include "comm.h"
-#include "domain.h"
 #include "random_park.h"
 #include "string.h"
 #include "atom.h"
@@ -34,8 +34,6 @@
 #include "modify.h"
 #include "compute.h"
 #include "timer.h"
-#include "neighbor.h"
-#include "fix_nh.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -148,6 +146,8 @@ void FixSoftcoreEE::initial_integrate(int vflag)
 
   if (calculate)
     flag = (int *) force->pair->extract("gridflag",dim);
+
+  vflag_local = vflag;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -222,17 +222,8 @@ void FixSoftcoreEE::end_of_step()
       comm->reverse_comm();
       timer->stamp(Timer::COMM);
     }
-      
-    //MODIFIED :: GRID ENERGY CALCULATED AFTER NODE CHANGE
-    grid_energy = (double *) force->pair->extract("energy_grid",dim);
-    energy = new double[gridsize];
-    MPI_Allreduce(grid_energy,energy,gridsize,MPI_DOUBLE,MPI_SUM,world);
-    tail_flag = (int *) force->pair->extract("tail_flag",dim);
-    if (tail_flag[0]) {
-      etailnode = (double *) force->pair->extract("etailnode",dim);
-      volume = domain->xprd * domain->yprd * domain->zprd;
-      for (k = 0; k < gridsize; k++)  energy[k] += etailnode[k]/volume;
-    }      
+
+    if (modify->n_post_force) modify->post_force(vflag_local);
   }
 
   int nextstep = update->ntimestep + nevery;
