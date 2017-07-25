@@ -12,9 +12,7 @@
 ------------------------------------------------------------------------- */
 
 // TODO:
-// 1) Eliminar saíde em arquivo (usar somente saída via compute_vector)
-// 2) Eliminar compute softcore/grid (fazer diretamente neste fix)
-// 3) Apagar recálculo de energia após troca de lambda
+// 1) Apagar recálculo de energia após troca de lambda
 
 #include "math.h"
 #include "fix_softcore_ee.h"
@@ -49,55 +47,32 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 {
   int dim;
   int *size = (int *) force->pair->extract("gridsize",dim);
-  gridsize = size[0];
+  gridsize = *size;
   if (gridsize == 0)
     error->all(FLERR,"fix softcore/ee: no lambda grid defined");
-  if (narg < 7)
+
+  if (narg < 6)
     error->all(FLERR,"Illegal fix softcore/ee command");
+
   nevery = force->numeric(FLERR,arg[3]);
   if (nevery <= 0)
     error->all(FLERR,"Illegal fix softcore/ee command");
-  acfreq = force->numeric(FLERR,arg[4]);
-  if (acfreq <= 0)
-   error->all(FLERR,"Illegal fix softcore/ee command");
-  seed = force->numeric(FLERR,arg[5]);
+
+  seed = force->numeric(FLERR,arg[4]);
   if (seed <= 0)
     error->all(FLERR,"Illegal fix softcore/ee command");
-  minus_beta = -1.0/(force->boltz*force->numeric(FLERR,arg[6]));
-  
-  int iarg = 7;
-  ee_file = NULL;
-  idump = 0;
-  while (iarg < narg) {
-    if (strcmp(arg[iarg],"dump") == 0) {
-      if (iarg+3 > narg)
-        error->all(FLERR,"Illegal fix softcore/ee command");
-      idump = force->numeric(FLERR,arg[iarg+1]);
-      if (idump <= 0)
-        error->all(FLERR,"Illegal fix softcore/ee command");
-      int n = strlen(arg[iarg+2]) + 1;
-      char *string = new char[n];
-      strcpy(string,arg[iarg+2]);
-      if (comm->me == 0)
-        ee_file = fopen(arg[iarg+2],"w");
-      iarg += 3;
-    }
-    else
-      error->all(FLERR,"Illegal fix softcore/ee command");
-  }
+  minus_beta = -1.0/(force->boltz*force->numeric(FLERR,arg[5]));
+
   add_new_compute();
-  ratiocriteria = 1.0/acfreq;
   scalar_flag = 1;
   global_freq = 1;
 
   // set flags for arrays to clear in force_clear()
-
   torqueflag = extraflag = 0;
   if (atom->torque_flag) torqueflag = 1;
   if (atom->avec->forceclearflag) extraflag = 1;
 
   // orthogonal vs triclinic simulation box
-
   triclinic = domain->triclinic;
 }
 
@@ -105,8 +80,6 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 
 FixSoftcoreEE::~FixSoftcoreEE()
 {
-  if (ee_file)
-    fclose(ee_file);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -152,16 +125,6 @@ void FixSoftcoreEE::init()
   downhill = 0;
 
   random = new RanPark(lmp,seed);
-
-  if (ee_file) {
-    fprintf(ee_file,"step node lambda downhill");
-    for (int k = 0; k < gridsize; k++) {
-
-      fprintf(ee_file," energy[%d]",k);
-    fprintf(ee_file,"\n");
-    }
-  }
-
 }
 /* ----------------------------------------------------------------------
  activate computes
@@ -182,8 +145,6 @@ void FixSoftcoreEE::initial_integrate(int vflag)
   int dim,*flag,step;
   step = update->ntimestep;
   calculate = step % nevery == 0;
-  if (idump != 0) 
-    calculate = calculate || (step % idump == 0);
 
   if (calculate)
     flag = (int *) force->pair->extract("gridflag",dim);
@@ -273,17 +234,7 @@ void FixSoftcoreEE::end_of_step()
       for (k = 0; k < gridsize; k++)  energy[k] += etailnode[k]/volume;
     }      
   }
-  double PE = pe->compute_scalar();
-  int step;
-  step = update->ntimestep;
 
-  if ( ee_file && (step % idump == 0) ) {
-    fprintf(ee_file,"%d %d %g %d %g", 
-           step, current_node, lambdanode[current_node], downhill, PE);
-    for (int k = 0; k < gridsize; k++)
-      fprintf(ee_file," %g",energy[k]);
-    fprintf(ee_file,"\n");
-  }
   int nextstep = update->ntimestep + nevery;
   if (nextstep <= update->laststep) 
     pe->addstep(nextstep);

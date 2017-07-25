@@ -45,7 +45,7 @@ pair_modify     pair lj/cut/softcore alpha 0.5 n 1 p 1 set_grid 16 0.0 0.05 0.1 
 #pair_modify	pair lj/cut compute no
 fix		1 all rigid/nve/small molecule
 #fix		hmc all hmc ${nevery} ${seed} ${temp} 1
-fix		2 all softcore/ee 5 1 123 298 dump 5 ee.dat
+fix		2 all softcore/ee 5 123 298
 compute         E all softcore/grid
 #compute		state all softcore/state
 

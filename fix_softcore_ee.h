@@ -40,14 +40,14 @@ class FixSoftcoreEE : public Fix {
   int calculate;
   int current_node;
   int seed;
-  int gridsize,acfreq;
-  double minus_beta,ratiocriteria;
+  int gridsize; //,acfreq;
+  double minus_beta; //,ratiocriteria;
   double *weight;
   double *lambdanode;
   char *lambda_arg[4];
   int downhill;
-  int idump;
-  FILE *ee_file;
+//  int idump;
+//  FILE *ee_file;
   int nvt_flag, hmc_flag;
   RanPark *random;
   class Compute *pe;
