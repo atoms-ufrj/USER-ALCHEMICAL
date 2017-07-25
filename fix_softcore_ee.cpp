@@ -84,10 +84,7 @@ FixSoftcoreEE::~FixSoftcoreEE()
 
 int FixSoftcoreEE::setmask()
 {
-  int mask = 0;
-  mask |= INITIAL_INTEGRATE;
-  mask |= END_OF_STEP;
-  return mask;
+  return INITIAL_INTEGRATE | PRE_FORCE | END_OF_STEP;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -151,6 +148,14 @@ void FixSoftcoreEE::initial_integrate(int vflag)
 }
 
 /*----------------------------------------------------------------------------*/
+
+void FixSoftcoreEE::pre_force(int vflag)
+{
+
+}
+
+/*----------------------------------------------------------------------------*/
+
 void FixSoftcoreEE::end_of_step()
 {
   int new_node;

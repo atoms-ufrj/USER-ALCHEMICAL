@@ -33,6 +33,7 @@ class FixSoftcoreEE : public Fix {
   void initial_integrate(int);
   void init();
   void end_of_step();
+  void pre_force(int);
   void setup(int);
   double compute_scalar();
 
