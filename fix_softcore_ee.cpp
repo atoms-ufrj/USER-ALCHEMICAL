@@ -141,6 +141,9 @@ void FixSoftcoreEE::init()
 
   change_node(0);
   downhill = 0;
+
+  for (int i = 0; i < npairs; i++)
+    pair[i]->gridflag = 0;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -150,31 +153,24 @@ void FixSoftcoreEE::pre_force(int vflag)
   int i;
   if (update->ntimestep % nevery == 0) {
 
-    double umax, usum, acc, r;
-    double P[gridsize], energy[gridsize] = {0.0};
-
+    // Compute lambda-related energy at every node:
+    double energy[gridsize] = {0.0};
     for (i = 0; i < npairs; i++)
       add_energies( &energy[0], pair[i] );
 
+    // Select a node based on their Boltzmann weights:
     new_node = select_node( energy );
 
     if (new_node != current_node) {
-
-      int n = atom->nlocal;
-      if (force->newton_pair)
-        n += atom->nghost;
-      if (n > nmax) {
-        nmax = n;
-        memory->grow(f_new,nmax,3,"fix_softcore_ee::f_new");
-      }
-
-      for (i = 0; i < n; i++)
-        f_new[i][0] = f_new[i][1] = f_new[i][2] = 0.0;
 
       for (i = 0; i < npairs; i++)
         pair[i]->compute(0,0);
 
       change_node(new_node);
+
+      int n = force_array_size();
+      for (i = 0; i < n; i++)
+        f_new[i][0] = f_new[i][1] = f_new[i][2] = 0.0;
 
       std::swap(atom->f,f_new);
       for (i = 0; i < npairs; i++)
@@ -186,13 +182,8 @@ void FixSoftcoreEE::pre_force(int vflag)
         atom->f[i][1] -= f_new[i][1];
         atom->f[i][2] -= f_new[i][2];
       }
-
     }
-
   }
-  else if ((update->ntimestep + 1) % nevery == 0)
-    for (i = 0; i < npairs; i++)
-      pair[i]->gridflag = 1;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -260,6 +251,22 @@ void FixSoftcoreEE::change_node(int node)
     downhill = current_node != 0;
   else
     downhill = current_node == gridsize - 1;
+}
+
+/* ----------------------------------------------------------------------
+
+------------------------------------------------------------------------- */
+
+int FixSoftcoreEE::force_array_size()
+{
+  int n = atom->nlocal;
+  if (force->newton_pair)
+    n += atom->nghost;
+  if (n > nmax) {
+    nmax = n;
+    memory->grow(f_new,nmax,3,"fix_softcore_ee::f_new");
+  }
+  return n;
 }
 
 /* ----------------------------------------------------------------------

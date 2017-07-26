@@ -47,6 +47,7 @@ class FixSoftcoreEE : public Fix {
   RanPark *random;
   void change_node(int);
   int select_node(double*);
+  int force_array_size();
  protected:
   int npairs;
   PairLJCutSoftcore **pair;
