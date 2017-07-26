@@ -33,7 +33,6 @@ class FixSoftcoreEE : public Fix {
   int setmask();
   void initial_integrate(int);
   void init();
-  void end_of_step();
   void pre_force(int);
   void setup(int);
   double compute_scalar();
@@ -41,12 +40,13 @@ class FixSoftcoreEE : public Fix {
   int calculate;
   int current_node;
   int new_node;
+  int node_changed;
   int seed;
   int gridsize;
   double minus_beta;
   double *weight;
   double *lambdanode;
-  char *lambda_arg[4];
+  char *lambda_arg[2];
   int downhill;
   int nvt_flag, hmc_flag;
   RanPark *random;
@@ -62,6 +62,9 @@ class FixSoftcoreEE : public Fix {
   int npairs;
   PairLJCutSoftcore **pair;
   void add_energies(double *, PairLJCutSoftcore *);
+
+  int nmax;
+  double **f_new;
 };
 
 }

@@ -1057,7 +1057,7 @@ void PairLJCutSoftcore::modify_params(int narg, char **arg)
       for (int i = 0; i < nodes; i++) 
         add_node_to_grid(force->numeric(FLERR,arg[iarg+2+i]),0.0);
       iarg += 2+nodes;
-      printf("%d", nodes);
+//      printf("%d", nodes);
     }
     else if (m == 8) { // add_node:
 

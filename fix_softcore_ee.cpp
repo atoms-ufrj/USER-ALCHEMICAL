@@ -35,6 +35,7 @@
 #include "compute.h"
 #include "timer.h"
 #include "pair_hybrid_ee.h"
+#include "memory.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -92,12 +93,19 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
       npairs = 1;
       pair[0] = (PairLJCutSoftcore *) force->pair;
     }
+
+    // Allocate force buffer:
+    nmax = atom->nlocal;
+    if (force->newton_pair) nmax += atom->nghost;
+    memory->create(f_new,nmax,3,"fix_softcore_ee::f_new");
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixSoftcoreEE::~FixSoftcoreEE()
 {
+  modify->delete_compute("ee_pe");
+  memory->destroy(f_new);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -130,10 +138,8 @@ void FixSoftcoreEE::init()
     }
   }
 
-  lambda_arg[0] = (char*)"pair";
-  lambda_arg[1] = (char*)"lj/cut/softcore";
-  lambda_arg[2] = (char*)"lambda";
-  lambda_arg[3] = new char[18];
+  lambda_arg[0] = (char*)"lambda";
+  lambda_arg[1] = new char[18];
 
   change_node(0);
   downhill = 0;
@@ -203,6 +209,41 @@ void FixSoftcoreEE::pre_force(int vflag)
     }
     MPI_Bcast(&new_node,1,MPI_INT,0,world);
 
+    node_changed = new_node != current_node;
+    if (node_changed) {
+
+      int n = atom->nlocal;
+      if (force->newton_pair) n += atom->nghost;
+      if (n > nmax) {
+        nmax = n;
+        memory->grow(f_new,nmax,3,"fix_softcore_ee::f_new");
+      }
+
+      for (i = 0; i < n; i++)
+        f_new[i][0] = f_new[i][1] = f_new[i][2] = 0.0;
+
+      for (i = 0; i < npairs; i++)
+        pair[i]->compute(0,0);
+  
+      change_node(new_node);
+
+      std::swap(atom->f,f_new);
+      for (i = 0; i < npairs; i++)
+        pair[i]->compute(0,0);
+      std::swap(atom->f,f_new);
+
+      for (i = 0; i < n; i++) {
+        atom->f[i][0] -= f_new[i][0];
+        atom->f[i][1] -= f_new[i][1];
+        atom->f[i][2] -= f_new[i][2];
+      }
+
+    }
+
+    // Prepare for calculations at next expanded ensemble step:
+    int nextstep = update->ntimestep + nevery;
+    if (nextstep <= update->laststep) 
+      pe->addstep(nextstep);
   }
 }
 
@@ -222,57 +263,16 @@ void FixSoftcoreEE::add_energies(double *energy, PairLJCutSoftcore *pair)
   }
 }
 
-/*----------------------------------------------------------------------------*/
-
-void FixSoftcoreEE::end_of_step()
-{
-  if (new_node != current_node) {
-    change_node(new_node);
-    force_clear();
-    int eflag = 1; 
-    int vflag = 1;
-
-    if (force->pair && force->pair->compute_flag) {
-      force->pair->compute(eflag,vflag);
-      timer->stamp(Timer::PAIR);
-    }
-
-    if (atom->molecular) {
-      if (force->bond) force->bond->compute(eflag,vflag);
-      if (force->angle) force->angle->compute(eflag,vflag);
-      if (force->dihedral) force->dihedral->compute(eflag,vflag);
-      if (force->improper) force->improper->compute(eflag,vflag);
-      timer->stamp(Timer::BOND);
-    }
-
-    if (force->kspace && force->kspace->compute_flag) {
-      force->kspace->compute(eflag,vflag);
-      timer->stamp(Timer::KSPACE);
-    }
-
-     // reverse communication of forces
-
-    if (force->newton) {
-      comm->reverse_comm();
-      timer->stamp(Timer::COMM);
-    }
-
-    if (modify->n_post_force) modify->post_force(vflag_local);
-  }
-
-  int nextstep = update->ntimestep + nevery;
-  if (nextstep <= update->laststep) 
-    pe->addstep(nextstep);
-}
-
 /* ---------------------------------------------------------------------- */
 
 void FixSoftcoreEE::change_node(int node)
 {
   current_node = node;
-  sprintf(lambda_arg[3],"%18.16f",lambdanode[node]);
-  force->pair->modify_params(4,lambda_arg);
-  force->pair->reinit();
+  sprintf(lambda_arg[1],"%18.16f",lambdanode[node]);
+  for (int i = 0; i < npairs; i++) {
+    pair[i]->modify_params(2,lambda_arg);
+    pair[i]->reinit();
+  }
   if (downhill)
     downhill = current_node != 0;
   else
