@@ -25,6 +25,7 @@ PairStyle(lj/cut/softcore,PairLJCutSoftcore)
 namespace LAMMPS_NS {
 
 class PairLJCutSoftcore : public Pair {
+ friend class FixSoftcoreEE;
  public:
   PairLJCutSoftcore(class LAMMPS *);
   virtual ~PairLJCutSoftcore();

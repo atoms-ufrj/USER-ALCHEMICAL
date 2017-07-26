@@ -22,6 +22,7 @@ FixStyle(softcore/ee,FixSoftcoreEE)
 
 #include "fix.h"
 #include "random_park.h"
+#include "pair_lj_cut_softcore.h"
 
 namespace LAMMPS_NS {
 
@@ -36,10 +37,10 @@ class FixSoftcoreEE : public Fix {
   void pre_force(int);
   void setup(int);
   double compute_scalar();
-
  private:
   int calculate;
   int current_node;
+  int new_node;
   int seed;
   int gridsize;
   double minus_beta;
@@ -56,7 +57,11 @@ class FixSoftcoreEE : public Fix {
   int triclinic;
   int torqueflag,extraflag;
   int vflag_local;
-  virtual void force_clear();
+  void force_clear();
+
+  int npairs;
+  PairLJCutSoftcore **pair;
+  void add_energies(double *, PairLJCutSoftcore *);
 };
 
 }

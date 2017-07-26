@@ -34,6 +34,7 @@
 #include "modify.h"
 #include "compute.h"
 #include "timer.h"
+#include "pair_hybrid_ee.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -72,6 +73,25 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 
   // orthogonal vs triclinic simulation box
   triclinic = domain->triclinic;
+
+  // Retrieve lambda-related pair styles:
+  if (strcmp(force->pair_style,"hybrid/ee") == 0) {
+    class PairHybridEE *pair_hybrid;
+    pair_hybrid = (PairHybridEE *) force->pair;
+    npairs = 0;
+    for (int i = 0; i < pair_hybrid->nstyles; i++)
+      if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
+        npairs++;
+    pair = new PairLJCutSoftcore*[npairs];
+    int j = 0;
+    for (int i = 0; i < pair_hybrid->nstyles; i++)
+      if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
+        pair[j++] = (PairLJCutSoftcore *) pair_hybrid->styles[i];
+    }
+    else if (strcmp(force->pair_style,"lj/cut/softcore") == 0) {
+      npairs = 1;
+      pair[0] = (PairLJCutSoftcore *) force->pair;
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -91,7 +111,6 @@ int FixSoftcoreEE::setmask()
 
 void FixSoftcoreEE::init()
 {
-
   int dim;
   weight = (double *) force->pair->extract("weight",dim);
   lambdanode = (double *) force->pair->extract("lambdanode",dim);
@@ -151,52 +170,62 @@ void FixSoftcoreEE::initial_integrate(int vflag)
 
 void FixSoftcoreEE::pre_force(int vflag)
 {
+  if (update->ntimestep % nevery == 0) {
 
+    int i;
+    double umax, usum, acc, r;
+    double P[gridsize], energy[gridsize] = {0.0};
+
+    for (i = 0; i < npairs; i++)
+      add_energies( &energy[0], pair[i] );
+
+    P[0] = minus_beta*energy[0] + weight[0];
+    umax = P[0];
+    for (i = 1; i < gridsize; i++) {
+      P[i] = minus_beta*energy[i] + weight[i];
+      umax = MAX(umax,P[i]);
+    }
+
+    usum = 0.0;
+    for (i = 0; i < gridsize; i++) {
+      P[i] = exp(P[i] - umax);
+      usum += P[i];
+    }
+    for (i = 0; i < gridsize; i++)
+      P[i] /= usum;
+
+    r = random->uniform();
+    acc = P[0];
+    new_node = 0;
+    while (r > acc) {
+      new_node++;
+      acc += P[new_node];
+    }
+    MPI_Bcast(&new_node,1,MPI_INT,0,world);
+
+  }
+}
+
+/*----------------------------------------------------------------------------*/
+
+void FixSoftcoreEE::add_energies(double *energy, PairLJCutSoftcore *pair)
+{
+  pair->compute_grid();
+  double node_energy[gridsize];
+  MPI_Allreduce(pair->evdwlnode,&node_energy[0],gridsize,MPI_DOUBLE,MPI_SUM,world);
+  for (int k = 0; k < gridsize; k++)
+    energy[k] += node_energy[k];
+  if (pair->tail_flag) {
+    double volume = domain->xprd * domain->yprd * domain->zprd;
+    for (int k = 0; k < gridsize; k++)
+      energy[k] += pair->etailnode[k]/volume;
+  }
 }
 
 /*----------------------------------------------------------------------------*/
 
 void FixSoftcoreEE::end_of_step()
 {
-  int new_node;
-  int dim,*tail_flag,k;
-  double *grid_energy,*etailnode,*energy,volume;
-
-  grid_energy = (double *) force->pair->extract("energy_grid",dim);
-  energy = new double[gridsize];
-  MPI_Allreduce(grid_energy,energy,gridsize,MPI_DOUBLE,MPI_SUM,world);
-  tail_flag = (int *) force->pair->extract("tail_flag",dim);
-  if (tail_flag[0]) {
-    etailnode = (double *) force->pair->extract("etailnode",dim);
-    volume = domain->xprd * domain->yprd * domain->zprd;
-    for (k = 0; k < gridsize; k++)
-      energy[k] += etailnode[k]/volume;
-  }
-
-  double P[gridsize], umax, usum;
-  P[0] = minus_beta*energy[0] + weight[0];
-  umax = P[0];
-  
-  for (k = 1; k < gridsize; k++) {
-    P[k] = minus_beta*energy[k] + weight[k];
-    umax = MAX(umax,P[k]);
-  }
-  usum = 0.0;
-  for (k = 0; k < gridsize; k++) {
-    P[k] = exp(P[k]-umax);
-    usum += P[k];
-  }
-  for (k = 0; k < gridsize; k++) P[k] /= usum;
-  
-  double r = random->uniform();
-  new_node = 0;
-  double acc = P[0];
-  while (r > acc) {
-    new_node++;
-    acc += P[new_node];
-  }
-  MPI_Bcast(&new_node,1,MPI_INT,0,world);
-
   if (new_node != current_node) {
     change_node(new_node);
     force_clear();

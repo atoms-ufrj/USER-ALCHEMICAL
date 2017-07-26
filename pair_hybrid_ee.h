@@ -26,6 +26,7 @@ PairStyle(hybrid/ee,PairHybridEE)
 namespace LAMMPS_NS {
 
 class PairHybridEE : public PairHybrid {
+ friend class FixSoftcoreEE;
  public:
   PairHybridEE(class LAMMPS *);
   void modify_params(int narg, char **arg);
