@@ -31,16 +31,12 @@ class FixSoftcoreEE : public Fix {
   FixSoftcoreEE(class LAMMPS *, int, char **);
   ~FixSoftcoreEE();
   int setmask();
-  void initial_integrate(int);
   void init();
   void pre_force(int);
-  void setup(int);
   double compute_scalar();
  private:
-  int calculate;
   int current_node;
   int new_node;
-  int node_changed;
   int seed;
   int gridsize;
   double minus_beta;
@@ -48,17 +44,10 @@ class FixSoftcoreEE : public Fix {
   double *lambdanode;
   char *lambda_arg[2];
   int downhill;
-  int nvt_flag, hmc_flag;
   RanPark *random;
-  class Compute *pe;
   void change_node(int);
-  void add_new_compute();
+  int select_node(double*);
  protected:
-  int triclinic;
-  int torqueflag,extraflag;
-  int vflag_local;
-  void force_clear();
-
   int npairs;
   PairLJCutSoftcore **pair;
   void add_energies(double *, PairLJCutSoftcore *);

@@ -45,12 +45,7 @@ using namespace FixConst;
 FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
-  int dim;
-  int *size = (int *) force->pair->extract("gridsize",dim);
-  gridsize = *size;
-  if (gridsize == 0)
-    error->all(FLERR,"fix softcore/ee: no lambda grid defined");
-
+  // Retrieve fix softcore/ee command arguments:
   if (narg < 6)
     error->all(FLERR,"Illegal fix softcore/ee command");
 
@@ -63,17 +58,16 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"Illegal fix softcore/ee command");
   minus_beta = -1.0/(force->boltz*force->numeric(FLERR,arg[5]));
 
-  add_new_compute();
+  // Set fix softcore/ee properties:
   scalar_flag = 1;
   global_freq = 1;
 
-  // set flags for arrays to clear in force_clear()
-  torqueflag = extraflag = 0;
-  if (atom->torque_flag) torqueflag = 1;
-  if (atom->avec->forceclearflag) extraflag = 1;
-
-  // orthogonal vs triclinic simulation box
-  triclinic = domain->triclinic;
+  // Determine the number of nodes in the lambda grid:
+  int dim;
+  int *size = (int *) force->pair->extract("gridsize",dim);
+  gridsize = *size;
+  if (gridsize == 0)
+    error->all(FLERR,"fix softcore/ee: no lambda grid defined");
 
   // Retrieve lambda-related pair styles:
   if (strcmp(force->pair_style,"hybrid/ee") == 0) {
@@ -94,17 +88,24 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
       pair[0] = (PairLJCutSoftcore *) force->pair;
     }
 
-    // Allocate force buffer:
-    nmax = atom->nlocal;
-    if (force->newton_pair) nmax += atom->nghost;
-    memory->create(f_new,nmax,3,"fix_softcore_ee::f_new");
+  // Allocate force buffer:
+  nmax = atom->nlocal;
+  if (force->newton_pair)
+    nmax += atom->nghost;
+  memory->create(f_new,nmax,3,"fix_softcore_ee::f_new");
+
+  // Prepare array for lambda value change in pair styles:
+  lambda_arg[0] = (char*)"lambda";
+  lambda_arg[1] = new char[18];
+
+  // Initialize random number generator:
+  random = new RanPark(lmp,seed);
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixSoftcoreEE::~FixSoftcoreEE()
 {
-  modify->delete_compute("ee_pe");
   memory->destroy(f_new);
 }
 
@@ -112,7 +113,7 @@ FixSoftcoreEE::~FixSoftcoreEE()
 
 int FixSoftcoreEE::setmask()
 {
-  return INITIAL_INTEGRATE | PRE_FORCE | END_OF_STEP;
+  return PRE_FORCE;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -138,82 +139,30 @@ void FixSoftcoreEE::init()
     }
   }
 
-  lambda_arg[0] = (char*)"lambda";
-  lambda_arg[1] = new char[18];
-
   change_node(0);
   downhill = 0;
-
-  random = new RanPark(lmp,seed);
-}
-/* ----------------------------------------------------------------------
- activate computes
-------------------------------------------------------------------------- */
-
-void FixSoftcoreEE::setup(int vflag)
-{
-  pe->compute_scalar();
-  // Activate potential energy and other necessary calculations:
-  int nextstep = update->ntimestep + nevery;
-  pe->addstep(nextstep);
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixSoftcoreEE::initial_integrate(int vflag)
-{
-  int dim,*flag,step;
-  step = update->ntimestep;
-  calculate = step % nevery == 0;
-
-  if (calculate)
-    flag = (int *) force->pair->extract("gridflag",dim);
-
-  vflag_local = vflag;
 }
 
 /*----------------------------------------------------------------------------*/
 
 void FixSoftcoreEE::pre_force(int vflag)
 {
+  int i;
   if (update->ntimestep % nevery == 0) {
 
-    int i;
     double umax, usum, acc, r;
     double P[gridsize], energy[gridsize] = {0.0};
 
     for (i = 0; i < npairs; i++)
       add_energies( &energy[0], pair[i] );
 
-    P[0] = minus_beta*energy[0] + weight[0];
-    umax = P[0];
-    for (i = 1; i < gridsize; i++) {
-      P[i] = minus_beta*energy[i] + weight[i];
-      umax = MAX(umax,P[i]);
-    }
+    new_node = select_node( energy );
 
-    usum = 0.0;
-    for (i = 0; i < gridsize; i++) {
-      P[i] = exp(P[i] - umax);
-      usum += P[i];
-    }
-    for (i = 0; i < gridsize; i++)
-      P[i] /= usum;
-
-    r = random->uniform();
-    acc = P[0];
-    new_node = 0;
-    while (r > acc) {
-      new_node++;
-      acc += P[new_node];
-    }
-    MPI_Bcast(&new_node,1,MPI_INT,0,world);
-
-    node_changed = new_node != current_node;
-    if (node_changed) {
+    if (new_node != current_node) {
 
       int n = atom->nlocal;
-      if (force->newton_pair) n += atom->nghost;
+      if (force->newton_pair)
+        n += atom->nghost;
       if (n > nmax) {
         nmax = n;
         memory->grow(f_new,nmax,3,"fix_softcore_ee::f_new");
@@ -224,7 +173,7 @@ void FixSoftcoreEE::pre_force(int vflag)
 
       for (i = 0; i < npairs; i++)
         pair[i]->compute(0,0);
-  
+
       change_node(new_node);
 
       std::swap(atom->f,f_new);
@@ -240,11 +189,45 @@ void FixSoftcoreEE::pre_force(int vflag)
 
     }
 
-    // Prepare for calculations at next expanded ensemble step:
-    int nextstep = update->ntimestep + nevery;
-    if (nextstep <= update->laststep) 
-      pe->addstep(nextstep);
   }
+  else if ((update->ntimestep + 1) % nevery == 0)
+    for (i = 0; i < npairs; i++)
+      pair[i]->gridflag = 1;
+}
+
+/*----------------------------------------------------------------------------*/
+
+int FixSoftcoreEE::select_node(double *energy)
+{
+  int i, node;
+  double umax, usum, acc, r;
+  double P[gridsize];
+
+  P[0] = minus_beta*energy[0] + weight[0];
+  umax = P[0];
+  for (i = 1; i < gridsize; i++) {
+    P[i] = minus_beta*energy[i] + weight[i];
+    umax = MAX(umax,P[i]);
+  }
+
+  usum = 0.0;
+  for (i = 0; i < gridsize; i++) {
+    P[i] = exp(P[i] - umax);
+    usum += P[i];
+  }
+  for (i = 0; i < gridsize; i++)
+    P[i] /= usum;
+
+  r = random->uniform();
+  acc = P[0];
+  node = 0;
+  while (r > acc) {
+    node++;
+    acc += P[node];
+  }
+  MPI_Bcast(&node,1,MPI_INT,0,world);
+
+  return node;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -288,66 +271,6 @@ double FixSoftcoreEE::compute_scalar()
   
   return current_node;
 }
-/* ----------------------------------------------------------------------
-   clear force on own & ghost atoms
-   clear other arrays as needed
-------------------------------------------------------------------------- */
 
-void FixSoftcoreEE::force_clear()
-{
-  size_t nbytes;
-
-  // clear force on all particles
-  // if either newton flag is set, also include ghosts
-  // when using threads always clear all forces.
-
-  int nlocal = atom->nlocal;
-
-  if (neighbor->includegroup == 0) {
-    nbytes = sizeof(double) * nlocal;
-    if (force->newton) nbytes += sizeof(double) * atom->nghost;
-
-    if (nbytes) {
-      memset(&atom->f[0][0],0,3*nbytes);
-      if (torqueflag) memset(&atom->torque[0][0],0,3*nbytes);
-      if (extraflag) atom->avec->force_clear(0,nbytes);
-    }
-
-  // neighbor includegroup flag is set
-  // clear force only on initial nfirst particles
-  // if either newton flag is set, also include ghosts
-
-  } else {
-    nbytes = sizeof(double) * atom->nfirst;
-
-    if (nbytes) {
-      memset(&atom->f[0][0],0,3*nbytes);
-      if (torqueflag) memset(&atom->torque[0][0],0,3*nbytes);
-      if (extraflag) atom->avec->force_clear(0,nbytes);
-    }
-
-    if (force->newton) {
-      nbytes = sizeof(double) * atom->nghost;
-
-      if (nbytes) {
-        memset(&atom->f[nlocal][0],0,3*nbytes);
-        if (torqueflag) memset(&atom->torque[nlocal][0],0,3*nbytes);
-        if (extraflag) atom->avec->force_clear(nlocal,nbytes);
-      }
-    }
-  }
-}
 /* ---------------------------------------------------------------------- */
-void FixSoftcoreEE::add_new_compute()
-{
-  char **newarg = new char*[3];
 
-  // Potential energy:
-  newarg[0] = (char *) "ee_pe";
-  newarg[1] = (char *) "all";
-  newarg[2] = (char *) "pe";
-  modify->add_compute(3,newarg);
-  pe = modify->compute[modify->ncompute-1];
-
-  delete [] newarg;
-}
