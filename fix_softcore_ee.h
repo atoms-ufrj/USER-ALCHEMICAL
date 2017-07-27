@@ -33,7 +33,12 @@ class FixSoftcoreEE : public Fix {
   int setmask();
   void init();
   void pre_force(int);
-  double compute_scalar();
+  void pre_reverse(int,int);
+  void end_of_step();
+  double compute_vector(int);
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
+
  private:
   int current_node;
   int new_node;
@@ -43,18 +48,19 @@ class FixSoftcoreEE : public Fix {
   int gridsize;
   double *weight;
 
-  char *lambda_arg[2];
   int downhill;
   RanPark *random;
   void change_node(int);
   int select_node(double*);
-  int force_array_size();
+  int number_of_atoms();
 
+  int hybrid;
   int npairs;
   PairLJCutSoftcore **pair;
-  void add_energies(double *, PairLJCutSoftcore *);
+  int *compute_flag;
 
   int nmax;
+  double **f_old;
   double **f_new;
 };
 

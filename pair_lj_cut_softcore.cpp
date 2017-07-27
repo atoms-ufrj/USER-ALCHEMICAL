@@ -52,6 +52,7 @@ PairLJCutSoftcore::PairLJCutSoftcore(LAMMPS *lmp) : Pair(lmp)
   exponent_p = 1.0;
   lambda = 1.0;
 
+  skip = 0;
   gridflag = 0;
   gridsize = 0;
   memory->create(lambdanode,0,"pair:lambdanode");
@@ -100,6 +101,7 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   evdwl = 0.0;
+  if (skip) return;
 
   if (gridflag) {
     for (k = 0; k < gridsize; k++)

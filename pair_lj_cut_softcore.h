@@ -64,6 +64,7 @@ class PairLJCutSoftcore : public Pair {
                                             -1 for reversely linked pairs */
   int    *linkedtype;                    // 1 if type belongs to any linked pair
 
+  int    skip;        // 1 to skip pair computations
   int    gridflag;    // 1 if grid must be computed in the current step
   int    uptodate;    // 1 if grid was computed in the latest step
   int    gridsize;    // number of nodes in the grid
