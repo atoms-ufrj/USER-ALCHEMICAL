@@ -38,17 +38,18 @@ class FixSoftcoreEE : public Fix {
   int current_node;
   int new_node;
   int seed;
-  int gridsize;
   double minus_beta;
+
+  int gridsize;
   double *weight;
-  double *lambdanode;
+
   char *lambda_arg[2];
   int downhill;
   RanPark *random;
   void change_node(int);
   int select_node(double*);
   int force_array_size();
- protected:
+
   int npairs;
   PairLJCutSoftcore **pair;
   void add_energies(double *, PairLJCutSoftcore *);

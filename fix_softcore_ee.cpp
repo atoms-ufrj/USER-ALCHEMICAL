@@ -46,7 +46,7 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
   // Retrieve fix softcore/ee command arguments:
-  if (narg < 6)
+  if (narg < 6 || narg == 7)
     error->all(FLERR,"Illegal fix softcore/ee command");
 
   nevery = force->numeric(FLERR,arg[3]);
@@ -58,21 +58,24 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"Illegal fix softcore/ee command");
   minus_beta = -1.0/(force->boltz*force->numeric(FLERR,arg[5]));
 
+  if (narg > 7) {
+    if (strcmp(arg[6],"weights") != 0)
+      error->all(FLERR,"Illegal fix softcore/ee command");
+    gridsize = narg - 7;
+    memory->create(weight,gridsize,"fix_softcore_ee::weight");
+    for (int i = 0; i < gridsize; i++)
+      weight[i] = force->numeric(FLERR,arg[7+i]);
+  }
+  else
+    weight = NULL;
+
   // Set fix softcore/ee properties:
   scalar_flag = 1;
   global_freq = 1;
 
-  // Determine the number of nodes in the lambda grid:
-  int dim;
-  int *size = (int *) force->pair->extract("gridsize",dim);
-  gridsize = *size;
-  if (gridsize == 0)
-    error->all(FLERR,"fix softcore/ee: no lambda grid defined");
-
-  // Retrieve lambda-related pair styles:
+  // Retrieve all lambda-related pair styles:
   if (strcmp(force->pair_style,"hybrid/ee") == 0) {
-    class PairHybridEE *pair_hybrid;
-    pair_hybrid = (PairHybridEE *) force->pair;
+    PairHybridEE *pair_hybrid = (PairHybridEE *) force->pair;
     npairs = 0;
     for (int i = 0; i < pair_hybrid->nstyles; i++)
       if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
@@ -87,6 +90,9 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
       npairs = 1;
       pair[0] = (PairLJCutSoftcore *) force->pair;
     }
+
+  if (npairs == 0)
+    error->all(FLERR,"fix softcore/ee: no pair styles associated to coupling parameter lambda");
 
   // Allocate force buffer:
   nmax = atom->nlocal;
@@ -107,6 +113,7 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 FixSoftcoreEE::~FixSoftcoreEE()
 {
   memory->destroy(f_new);
+  if (weight) memory->destroy(weight);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -120,23 +127,34 @@ int FixSoftcoreEE::setmask()
 
 void FixSoftcoreEE::init()
 {
-  int dim;
-  weight = (double *) force->pair->extract("weight",dim);
-  lambdanode = (double *) force->pair->extract("lambdanode",dim);
+  // Determine the number of nodes in the lambda grid:
+  int nodes = pair[0]->gridsize;
+  int all_equal = 1;
+  for (int i = 1; i < npairs; i++)
+    all_equal &= pair[i]->gridsize == nodes;
+
+  if (all_equal) {
+    if (nodes == 0)
+      error->all(FLERR,"fix softcore/ee: no lambda grid has been defined");
+    else if (!weight) {
+      gridsize = nodes;
+      memory->create(weight,gridsize,"fix_softcore_ee::weight");
+      for (int i = 0; i < gridsize; i++)
+        weight[i] = 0.0;
+    }
+  }
+  else
+    error->all(FLERR,"fix softcore/ee: all lambda grids must have the same number of nodes");
 
   if (comm->me == 0) {
-    if (screen) {
-      fprintf(screen,"Expanded ensemble weights: (");
-      for (int k = 0; k < gridsize-1; k++)
-        fprintf(screen,"%g; ",weight[k]);
-      fprintf(screen,"%g)\n",weight[gridsize-1]);
-    }
-    if (logfile) {
-      fprintf(logfile,"Expanded ensemble weights: (");
-      for (int k = 0; k < gridsize-1; k++)
-        fprintf(logfile,"%g; ",weight[k]);
-      fprintf(logfile,"%g)\n",weight[gridsize-1]);
-    }
+    FILE* unit[2] = {screen,logfile};
+    for (int i = 0; i < 2; i++)
+      if (unit[i]) {
+        fprintf(unit[i],"Expanded ensemble weights: (");
+        for (int k = 0; k < gridsize-1; k++)
+          fprintf(unit[i],"%g; ",weight[k]);
+        fprintf(unit[i],"%g)\n",weight[gridsize-1]);
+      }
   }
 
   change_node(0);
@@ -242,8 +260,8 @@ void FixSoftcoreEE::add_energies(double *energy, PairLJCutSoftcore *pair)
 void FixSoftcoreEE::change_node(int node)
 {
   current_node = node;
-  sprintf(lambda_arg[1],"%18.16f",lambdanode[node]);
   for (int i = 0; i < npairs; i++) {
+    sprintf(lambda_arg[1],"%18.16f",pair[i]->lambdanode[node]);
     pair[i]->modify_params(2,lambda_arg);
     pair[i]->reinit();
   }
