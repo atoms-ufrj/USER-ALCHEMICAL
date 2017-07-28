@@ -54,7 +54,6 @@ class FixSoftcoreEE : public Fix {
   int select_node(double*);
   int number_of_atoms();
 
-  int hybrid;
   int npairs;
   PairLJCutSoftcore **pair;
   int *compute_flag;
@@ -62,6 +61,10 @@ class FixSoftcoreEE : public Fix {
   int nmax;
   double **f_old;
   double **f_new;
+
+  double **f;
+  double eng_vdwl;
+  double eng_coul;
 };
 
 }

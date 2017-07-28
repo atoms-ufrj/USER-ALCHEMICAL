@@ -75,37 +75,36 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   size_vector = 2;
   global_freq = 1;
 
-  // Retrieve all lambda-related pair styles:
-  hybrid = strcmp(force->pair_style,"hybrid/ee") == 0;
-  if (hybrid) {
-    PairHybridEE *pair_hybrid = (PairHybridEE *) force->pair;
-    npairs = 0;
-    for (int i = 0; i < pair_hybrid->nstyles; i++)
-      if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
-        npairs++;
-    pair = new PairLJCutSoftcore*[npairs];
-    int j = 0;
-    for (int i = 0; i < pair_hybrid->nstyles; i++)
-      if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0) {
-        pair[j++] = (PairLJCutSoftcore *) pair_hybrid->styles[i];
-      }
-  }
-  else if (strcmp(force->pair_style,"lj/cut/softcore") == 0) {
-    npairs = 1;
-    pair[0] = (PairLJCutSoftcore *) force->pair;
-  }
+  // Certify use of pair style hybrid:
+  if (strcmp(force->pair_style,"hybrid/ee") != 0)
+    error->all(FLERR,"fix softcore/ee: use of pair style hybrid/ee is mandatory");
 
+  // Look for lambda-related pair styles:
+  PairHybridEE *pair_hybrid = (PairHybridEE *) force->pair;
+  npairs = 0;
+  for (int i = 0; i < pair_hybrid->nstyles; i++)
+    if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
+      npairs++;
   if (npairs == 0)
     error->all(FLERR,"fix softcore/ee: no pair styles associated to coupling parameter lambda");
 
+  // Retrieve all lambda-related pair styles:
+  pair = new PairLJCutSoftcore*[npairs];
   compute_flag = new int[npairs];
+  int j = 0;
+  for (int i = 0; i < pair_hybrid->nstyles; i++)
+    if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0) {
+      pair[j++] = (PairLJCutSoftcore *) pair_hybrid->styles[i];
+    }
 
   // Allocate force buffer:
   nmax = atom->nlocal;
-  if (force->newton_pair)
-    nmax += atom->nghost;
+  if (force->newton_pair) nmax += atom->nghost;
   memory->create(f_old,nmax,3,"fix_softcore_ee::f_old");
   memory->create(f_new,nmax,3,"fix_softcore_ee::f_new");
+  memory->create(f,nmax,3,"fix_softcore_ee::f");
+  memory->create(eatom,nmax,"fix_softcore_ee::eatom");
+  memory->create(vatom,nmax,6,"fix_softcore_ee::vatom");
 
   // Initialize random number generator:
   random = new RanPark(lmp,seed);
@@ -117,6 +116,9 @@ FixSoftcoreEE::~FixSoftcoreEE()
 {
   memory->destroy(f_old);
   memory->destroy(f_new);
+  memory->destroy(f);
+  memory->destroy(eatom);
+  memory->destroy(vatom);
   if (weight) memory->destroy(weight);
 }
 
@@ -178,11 +180,9 @@ void FixSoftcoreEE::pre_force(int vflag)
 {
   if (update->ntimestep % nevery) return;
 
-  if (hybrid)
-    for (int i = 0; i < npairs; i++)
-      pair[i]->compute_flag = 0;
-  else
-    pair[0]->skip = 1;
+  // Disable computation of lambda-related pair styles:
+  for (int i = 0; i < npairs; i++)
+    pair[i]->compute_flag = 0;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -191,33 +191,23 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
 {
   if (update->ntimestep % nevery) return;
 
-  // Restore compute flags:
-  if (hybrid)
-    for (int i = 0; i < npairs; i++)
-      pair[i]->compute_flag = compute_flag[i];
-  else
-    pair[0]->skip = !compute_flag[0];
-
-  // Compute and store pair interactions with current lambda value:
-  double **f = atom->f;
   int n = number_of_atoms();
+
+  // Restore original compute flags:
+  for (int i = 0; i < npairs; i++)
+    pair[i]->compute_flag = compute_flag[i];
+
+  // Compute and store pair interactions using the current lambda value:
   for (int i = 0; i < n; i++)
     f_old[i][0] = f_old[i][1] = f_old[i][2] = 0.0;
-  std::swap(f,f_old);
+  std::swap(atom->f,f_old);
   for (int i = 0; i < npairs; i++) {
     pair[i]->gridflag = 1;
     pair[i]->compute(eflag,vflag);
   }
-  std::swap(f,f_old);
+  std::swap(atom->f,f_old);
 
-  // Add the forces computed above so as to complete the time step:
-  for (int i = 0; i < n; i++) {
-    f[i][0] += f_old[i][0];
-    f[i][1] += f_old[i][1];
-    f[i][2] += f_old[i][2];
-  }
-
-  // Compute lambda-related energy at every node:
+  // Compute lambda-related energy at every grid node:
   double energy[gridsize] = {0.0};
   for (int i = 0; i < npairs; i++) {
     double node_energy[gridsize];
@@ -238,38 +228,57 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
   if (new_node != current_node) {
     change_node(new_node);
 
-    // Compute and store pair interactions with new lambda value:
-    for (int i = 0; i < n; i++)
-      f_new[i][0] = f_new[i][1] = f_new[i][2] = 0.0;
-    std::swap(f,f_new);
+    // Store previously computed energies and virials:
+    class Pair *p = force->pair;
+    if (p->eflag_global) {
+      eng_vdwl = p->eng_vdwl;
+      eng_coul = p->eng_coul;
+    }
+    if (p->vflag_global)
+      for (int k = 0; k < 6; k++)
+        virial[k] = p->virial[k];
+    if (p->eflag_atom)
+      for (int j = 0; j < n; j++)
+        eatom[j] = p->eatom[j];
+    if (p->vflag_atom)
+      for (int j = 0; j < n; j++)
+        for (int k = 0; k < 6; k++)
+          vatom[j][k] = p->vatom[j][k];
+
+    // Compute and add pair interactions using the new lambda value:
+    std::swap(atom->f,f);
     for (int i = 0; i < npairs; i++) {
       pair[i]->compute(eflag,vflag);
       pair[i]->uptodate = 1;
     }
-    std::swap(f,f_new);
+    std::swap(atom->f,f);
   }
 
-  // Update energies and virials with most recently computed values:
-  if (hybrid) {
-    class Pair *p = force->pair;
-    for (int i = 0; i < npairs; i++) {
-      if (p->eflag_global) {
-        p->eng_vdwl += pair[i]->eng_vdwl;
-        p->eng_coul += pair[i]->eng_coul;
-      }
-      if (p->vflag_global)
-        for (int k = 0; k < 6; k++)
-          p->virial[k] += pair[i]->virial[k];
-      if (p->eflag_atom)
-        for (int j = 0; j < n; j++)
-          p->eatom[j] += pair[i]->eatom[j];
-      if (vflag_atom)
-        for (int j = 0; j < n; j++)
-          for (int k = 0; k < 6; k++)
-            p->vatom[j][k] += pair[i]->vatom[j][k];
+  // Add the computed forces in order to complete the current time step:
+  for (int i = 0; i < n; i++) {
+    atom->f[i][0] += f_old[i][0];
+    atom->f[i][1] += f_old[i][1];
+    atom->f[i][2] += f_old[i][2];
+  }
+
+  // If pair style is hybrid, update energies and virials:
+  class Pair *p = force->pair;
+  for (int i = 0; i < npairs; i++) {
+    if (p->eflag_global) {
+      p->eng_vdwl += pair[i]->eng_vdwl;
+      p->eng_coul += pair[i]->eng_coul;
     }
+    if (p->vflag_global)
+      for (int k = 0; k < 6; k++)
+        p->virial[k] += pair[i]->virial[k];
+    if (p->eflag_atom)
+      for (int j = 0; j < n; j++)
+        p->eatom[j] += pair[i]->eatom[j];
+    if (p->vflag_atom)
+      for (int j = 0; j < n; j++)
+        for (int k = 0; k < 6; k++)
+          p->vatom[j][k] += pair[i]->vatom[j][k];
   }
-
 }
 
 /*----------------------------------------------------------------------------*/
@@ -364,6 +373,9 @@ int FixSoftcoreEE::number_of_atoms()
     nmax = n;
     memory->grow(f_old,nmax,3,"fix_softcore_ee::f_old");
     memory->grow(f_new,nmax,3,"fix_softcore_ee::f_new");
+    memory->grow(f,nmax,3,"fix_softcore_ee::f");
+    memory->grow(eatom,nmax,"fix_softcore_ee::eatom");
+    memory->grow(vatom,nmax,6,"fix_softcore_ee::vatom");
   }
   return n;
 }
