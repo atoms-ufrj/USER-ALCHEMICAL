@@ -43,21 +43,9 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutSoftcore::PairLJCutSoftcore(LAMMPS *lmp) : Pair(lmp)
+PairLJCutSoftcore::PairLJCutSoftcore(LAMMPS *lmp) : PairSoftcore(lmp)
 {
   respa_enable = 1;
-
-  alpha = 0.5;
-  exponent_n = 1.0;
-  exponent_p = 1.0;
-  lambda = 1.0;
-
-  gridflag = 0;
-  gridsize = 0;
-  memory->create(lambdanode,0,"pair:lambdanode");
-  memory->create(evdwlnode,0,"pair:evdwlnode");
-  memory->create(etailnode,0,"pair:etailnode");
-  memory->create(weight,0,"pair:weight");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -77,16 +65,11 @@ PairLJCutSoftcore::~PairLJCutSoftcore()
     memory->destroy(lj4);
     memory->destroy(asq);
     memory->destroy(offset);
-    memory->destroy(linkflag);
 
     memory->destroy(lj3n);
     memory->destroy(lj4n);
     memory->destroy(asqn);
     memory->destroy(offn);
-
-    memory->destroy(lambdanode);
-    memory->destroy(evdwlnode);
-    memory->destroy(etailnode);
   }
 }
 
@@ -941,39 +924,6 @@ void *PairLJCutSoftcore::extract(const char *str, int &dim)
   }
   else
     return NULL;
-}
-
-/* ----------------------------------------------------------------------
-   adds a new node to the lambda grid, in increasing order of lambdas
-------------------------------------------------------------------------- */
-
-void PairLJCutSoftcore::add_node_to_grid(double lambda_value, double weight_value)
-{
-  int i,j;
-  double *backup = new double[gridsize];
-
-  if ( (lambda_value < 0.0) || (lambda_value > 1.0) )
-    error->all(FLERR,"Coupling parameter value is out of range");
-  memcpy(backup,lambdanode,sizeof(double)*gridsize);
-  gridsize++;
-  memory->grow(lambdanode,gridsize,"pair:lambdanode");
-  j = 0;
-  for (i = 0; i < gridsize-1; i++)
-    if (backup[i] < lambda_value) {
-      lambdanode[i] = backup[i];
-      j = i+1;
-    } else
-      lambdanode[i+1] = backup[i];
-  lambdanode[j] = lambda_value;
-
-  memcpy(backup,weight,sizeof(double)*(gridsize-1));
-  memory->grow(weight,gridsize,"pair:weight");
-  for (i = 0; i < j; i++)
-    weight[i] = backup[i];
-  weight[j] = weight_value;
-  for (i = j+1; i < gridsize; i++)
-    weight[i] = backup[i-1];
-
 }
 
 /* ---------------------------------------------------------------------- */

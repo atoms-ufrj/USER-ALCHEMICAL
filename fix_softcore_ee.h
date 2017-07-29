@@ -22,7 +22,7 @@ FixStyle(softcore/ee,FixSoftcoreEE)
 
 #include "fix.h"
 #include "random_park.h"
-#include "pair_lj_cut_softcore.h"
+#include "pair_softcore.h"
 
 namespace LAMMPS_NS {
 
@@ -55,7 +55,7 @@ class FixSoftcoreEE : public Fix {
 
   int npairs;
   int *compute_flag;
-  PairLJCutSoftcore **pair;
+  class PairSoftcore **pair;
 
   int nmax;
   double **f_old;

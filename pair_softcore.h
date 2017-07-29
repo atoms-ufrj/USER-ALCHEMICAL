@@ -13,53 +13,42 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(lj/cut/softcore,PairLJCutSoftcore)
+//PairStyle(lj/softcore/base,PairSoftcore)
 
 #else
 
-#ifndef LMP_PAIR_LJ_CUT_SOFTCORE_H
-#define LMP_PAIR_LJ_CUT_SOFTCORE_H
+#ifndef LMP_PAIR_SOFTCORE_H
+#define LMP_PAIR_SOFTCORE_H
 
-#include "pair_softcore.h"
+#include "pair.h"
 
 namespace LAMMPS_NS {
 
-class PairLJCutSoftcore : public PairSoftcore {
+class PairSoftcore : public Pair {
+ friend class FixSoftcoreEE;
+
  public:
-  PairLJCutSoftcore(class LAMMPS *);
-  virtual ~PairLJCutSoftcore();
-  virtual void compute(int, int);
-  void settings(int, char **);
-  void coeff(int, char **);
-  void init_style();
-  void init_list(int, class NeighList *);
-  double init_one(int, int);
-  void write_restart(FILE *);
-  void read_restart(FILE *);
-  void write_restart_settings(FILE *);
-  void read_restart_settings(FILE *);
-  double single(int, int, int, int, double, double, double, double &);
-  void *extract(const char *, int &);
+  PairSoftcore(class LAMMPS *);
+  virtual ~PairSoftcore();
   void modify_params(int narg, char **arg);
 
-  void compute_inner();
-  void compute_middle();
-  void compute_outer(int, int);
-
-  void init_grid_one(int, int);
-  void compute_grid();
-
  protected:
-  double cut_global;
-  double **cut;
-  double **epsilon,**sigma;
-  double **lj1,**lj2,**lj3,**lj4,**asq,**offset;
-  double *cut_respa;
+  double alpha, exponent_n, exponent_p;  // softcore model parameters
+  double lambda;                         // coupling parameter value
+  int    **linkflag;                     /* +1 for directly linked pairs
+                                             0 for unlinked pairs
+                                            -1 for reversely linked pairs */
+  int    *linkedtype;                    // 1 if type belongs to any linked pair
 
-  double ***lj3n,***lj4n,***asqn,***offn; // variables for grid calculations
+  int    gridflag;    // 1 if grid must be computed in the current step
+  int    uptodate;    // 1 if grid was computed in the latest step
+  int    gridsize;    // number of nodes in the grid
+  double *lambdanode; // lambda value at each node
+  double *evdwlnode;  // total pairwise interaction energy at each node
+  double *etailnode;  // tail correction for energy at each node
+  double *weight;     // sampling weight for expanded ensemble
 
-  void allocate();
-  double atanx_x(double x);
+  void add_node_to_grid(double, double);
 };
 
 }

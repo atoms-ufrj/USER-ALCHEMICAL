@@ -89,12 +89,12 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"fix softcore/ee: no pair styles associated to coupling parameter lambda");
 
   // Retrieve all lambda-related pair styles:
-  pair = new PairLJCutSoftcore*[npairs];
+  pair = new class PairSoftcore*[npairs];
   compute_flag = new int[npairs];
   int j = 0;
   for (int i = 0; i < pair_hybrid->nstyles; i++)
     if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0) {
-      pair[j++] = (PairLJCutSoftcore *) pair_hybrid->styles[i];
+      pair[j++] = (class PairSoftcore *) pair_hybrid->styles[i];
     }
 
   // Allocate force buffer:
@@ -259,7 +259,7 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
     atom->f[i][2] += f_old[i][2];
   }
   for (int i = 0; i < npairs; i++) {
-    PairLJCutSoftcore *ipair = pair[i];
+    class PairSoftcore *ipair = pair[i];
     if (ipair->eflag_global) {
       hybrid->eng_vdwl += ipair->eng_vdwl;
       hybrid->eng_coul += ipair->eng_coul;
@@ -312,7 +312,7 @@ void FixSoftcoreEE::end_of_step()
 
     // Compute and add pair interactions using the new lambda value:
     for (int i = 0; i < npairs; i++) {
-      PairLJCutSoftcore *ipair = pair[i];
+      class PairSoftcore *ipair = pair[i];
       ipair->compute(eflag,vflag);
       ipair->uptodate = 1;
       if (ipair->eflag_global) {
