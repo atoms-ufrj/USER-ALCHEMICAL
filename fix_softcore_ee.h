@@ -36,12 +36,11 @@ class FixSoftcoreEE : public Fix {
   void pre_reverse(int,int);
   void end_of_step();
   double compute_vector(int);
-  int pack_reverse_comm(int, int, double *);
-  void unpack_reverse_comm(int, int *, double *);
 
  private:
   int current_node;
   int new_node;
+  int node_changed;
   int seed;
   double minus_beta;
 
@@ -55,12 +54,14 @@ class FixSoftcoreEE : public Fix {
   int number_of_atoms();
 
   int npairs;
-  PairLJCutSoftcore **pair;
   int *compute_flag;
+  PairLJCutSoftcore **pair;
 
   int nmax;
   double **f_old;
-  double **f_new;
+
+  int eflag;
+  int vflag;
 
   double **f;
   double eng_vdwl;

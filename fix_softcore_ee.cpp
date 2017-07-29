@@ -75,7 +75,7 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   size_vector = 2;
   global_freq = 1;
 
-  // Certify use of pair style hybrid:
+  // Certify the use of pair style hybrid:
   if (strcmp(force->pair_style,"hybrid/ee") != 0)
     error->all(FLERR,"fix softcore/ee: use of pair style hybrid/ee is mandatory");
 
@@ -101,7 +101,6 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   nmax = atom->nlocal;
   if (force->newton_pair) nmax += atom->nghost;
   memory->create(f_old,nmax,3,"fix_softcore_ee::f_old");
-  memory->create(f_new,nmax,3,"fix_softcore_ee::f_new");
   memory->create(f,nmax,3,"fix_softcore_ee::f");
   memory->create(eatom,nmax,"fix_softcore_ee::eatom");
   memory->create(vatom,nmax,6,"fix_softcore_ee::vatom");
@@ -115,7 +114,6 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 FixSoftcoreEE::~FixSoftcoreEE()
 {
   memory->destroy(f_old);
-  memory->destroy(f_new);
   memory->destroy(f);
   memory->destroy(eatom);
   memory->destroy(vatom);
@@ -192,6 +190,7 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
   if (update->ntimestep % nevery) return;
 
   int n = number_of_atoms();
+  PairHybridEE *hybrid = (PairHybridEE *) force->pair;
 
   // Restore original compute flags:
   for (int i = 0; i < npairs; i++)
@@ -205,7 +204,7 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
     pair[i]->gridflag = 1;
     pair[i]->compute(eflag,vflag);
   }
-  std::swap(atom->f,f_old);
+  std::swap(f_old,atom->f);
 
   // Compute lambda-related energy at every grid node:
   double energy[gridsize] = {0.0};
@@ -225,59 +224,56 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
   new_node = select_node( energy );
 
   // Change node if necessary:
-  if (new_node != current_node) {
-    change_node(new_node);
+  node_changed = new_node != current_node;
+  if (node_changed) {
 
-    // Store previously computed energies and virials:
-    class Pair *p = force->pair;
-    if (p->eflag_global) {
-      eng_vdwl = p->eng_vdwl;
-      eng_coul = p->eng_coul;
+    // Store previously computed forces, energies, and virials:
+    for (int i = 0; i < n; i++) {
+      this->f[i][0] = atom->f[i][0];
+      this->f[i][1] = atom->f[i][1];
+      this->f[i][2] = atom->f[i][2];
     }
-    if (p->vflag_global)
+    if (hybrid->eflag_global) {
+      this->eng_vdwl = hybrid->eng_vdwl;
+      this->eng_coul = hybrid->eng_coul;
+    }
+    if (hybrid->vflag_global)
       for (int k = 0; k < 6; k++)
-        virial[k] = p->virial[k];
-    if (p->eflag_atom)
+        this->virial[k] = hybrid->virial[k];
+    if (hybrid->eflag_atom)
       for (int j = 0; j < n; j++)
-        eatom[j] = p->eatom[j];
-    if (p->vflag_atom)
+        this->eatom[j] = hybrid->eatom[j];
+    if (hybrid->vflag_atom)
       for (int j = 0; j < n; j++)
         for (int k = 0; k < 6; k++)
-          vatom[j][k] = p->vatom[j][k];
+          this->vatom[j][k] = hybrid->vatom[j][k];
 
-    // Compute and add pair interactions using the new lambda value:
-    std::swap(atom->f,f);
-    for (int i = 0; i < npairs; i++) {
-      pair[i]->compute(eflag,vflag);
-      pair[i]->uptodate = 1;
-    }
-    std::swap(atom->f,f);
+    this->eflag = eflag;
+    this->vflag = vflag;
   }
 
-  // Add the computed forces in order to complete the current time step:
+  // Add the terms corresponding to the current lambda value:
   for (int i = 0; i < n; i++) {
     atom->f[i][0] += f_old[i][0];
     atom->f[i][1] += f_old[i][1];
     atom->f[i][2] += f_old[i][2];
   }
-
-  // If pair style is hybrid, update energies and virials:
-  class Pair *p = force->pair;
   for (int i = 0; i < npairs; i++) {
-    if (p->eflag_global) {
-      p->eng_vdwl += pair[i]->eng_vdwl;
-      p->eng_coul += pair[i]->eng_coul;
+    PairLJCutSoftcore *ipair = pair[i];
+    if (ipair->eflag_global) {
+      hybrid->eng_vdwl += ipair->eng_vdwl;
+      hybrid->eng_coul += ipair->eng_coul;
     }
-    if (p->vflag_global)
+    if (ipair->vflag_global)
       for (int k = 0; k < 6; k++)
-        p->virial[k] += pair[i]->virial[k];
-    if (p->eflag_atom)
+        hybrid->virial[k] += ipair->virial[k];
+    if (ipair->eflag_atom)
       for (int j = 0; j < n; j++)
-        p->eatom[j] += pair[i]->eatom[j];
-    if (p->vflag_atom)
+        hybrid->eatom[j] += ipair->eatom[j];
+    if (ipair->vflag_atom)
       for (int j = 0; j < n; j++)
         for (int k = 0; k < 6; k++)
-          p->vatom[j][k] += pair[i]->vatom[j][k];
+          hybrid->vatom[j][k] += ipair->vatom[j][k];
   }
 }
 
@@ -285,28 +281,63 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
 
 void FixSoftcoreEE::end_of_step()
 {
-  if (new_node != current_node) {
+  if (node_changed) {
 
     int n = number_of_atoms();
+    class Pair *hybrid = force->pair;
 
-    // Subtract old forces from the new ones:
+    // Restore previous forces, energies, and virials:
     for (int i = 0; i < n; i++) {
-      f_new[i][0] -= f_old[i][0];
-      f_new[i][1] -= f_old[i][1];
-      f_new[i][2] -= f_old[i][2];
+      atom->f[i][0] = this->f[i][0];
+      atom->f[i][1] = this->f[i][1];
+      atom->f[i][2] = this->f[i][2];
+    }
+    if (hybrid->eflag_global) {
+      hybrid->eng_vdwl = this->eng_vdwl;
+      hybrid->eng_coul = this->eng_coul;
+    }
+    if (hybrid->vflag_global)
+      for (int k = 0; k < 6; k++)
+        hybrid->virial[k] = this->virial[k];
+    if (hybrid->eflag_atom)
+      for (int j = 0; j < n; j++)
+        hybrid->eatom[j] = this->eatom[j];
+    if (hybrid->vflag_atom)
+      for (int j = 0; j < n; j++)
+        for (int k = 0; k < 6; k++)
+          hybrid->vatom[j][k] = this->vatom[j][k];
+
+    // Change to the new node:
+    change_node(new_node);
+
+    // Compute and add pair interactions using the new lambda value:
+    for (int i = 0; i < npairs; i++) {
+      PairLJCutSoftcore *ipair = pair[i];
+      ipair->compute(eflag,vflag);
+      ipair->uptodate = 1;
+      if (ipair->eflag_global) {
+        hybrid->eng_vdwl += ipair->eng_vdwl;
+        hybrid->eng_coul += ipair->eng_coul;
+      }
+      if (ipair->vflag_global)
+        for (int k = 0; k < 6; k++)
+          hybrid->virial[k] += ipair->virial[k];
+      if (ipair->eflag_atom)
+        for (int j = 0; j < n; j++)
+          hybrid->eatom[j] += ipair->eatom[j];
+      if (ipair->vflag_atom)
+        for (int j = 0; j < n; j++)
+          for (int k = 0; k < 6; k++)
+            hybrid->vatom[j][k] += ipair->vatom[j][k];
     }
 
-    // Reverse communicate force differences:
+    // Reverse communicate forces:
     if (force->newton_pair)
-      comm->reverse_comm_fix(this,3);
+      comm->reverse_comm();
 
-    // Update forces:
-    double **f = atom->f;
-    for (int i = 0; i < n; i++) {
-      f[i][0] += f_new[i][0];
-      f[i][1] += f_new[i][1];
-      f[i][2] += f_new[i][2];
-    }
+    // Perform post-force actions:
+    if (modify->n_post_force)
+      modify->post_force(vflag);
   }
 }
 
@@ -372,7 +403,6 @@ int FixSoftcoreEE::number_of_atoms()
   if (n > nmax) {
     nmax = n;
     memory->grow(f_old,nmax,3,"fix_softcore_ee::f_old");
-    memory->grow(f_new,nmax,3,"fix_softcore_ee::f_new");
     memory->grow(f,nmax,3,"fix_softcore_ee::f");
     memory->grow(eatom,nmax,"fix_softcore_ee::eatom");
     memory->grow(vatom,nmax,6,"fix_softcore_ee::vatom");
@@ -390,37 +420,6 @@ double FixSoftcoreEE::compute_vector(int i)
     return current_node;
   else if (i == 1)
     return downhill;
-}
-
-/* ---------------------------------------------------------------------- */
-
-int FixSoftcoreEE::pack_reverse_comm(int n, int first, double *buf)
-{
-  int i,m,last;
-
-  m = 0;
-  last = first + n;
-  for (i = first; i < last; i++) {
-    buf[m++] = f_new[i][0];
-    buf[m++] = f_new[i][1];
-    buf[m++] = f_new[i][2];
-  }
-  return m;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixSoftcoreEE::unpack_reverse_comm(int n, int *list, double *buf)
-{
-  int i,j,m;
-
-  m = 0;
-  for (i = 0; i < n; i++) {
-    j = list[i];
-    f_new[j][0] += buf[m++];
-    f_new[j][1] += buf[m++];
-    f_new[j][2] += buf[m++];
-  }
 }
 
 /* ---------------------------------------------------------------------- */
