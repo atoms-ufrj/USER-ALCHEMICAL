@@ -19,12 +19,13 @@
 
 #include "mpi.h"
 #include "compute_softcore_grid.h"
+#include "pair_hybrid_softcore.h"
+#include "pair_softcore.h"
 #include "update.h"
 #include "force.h"
 #include "pair.h"
 #include "domain.h"
 #include "error.h"
-#include "pair_hybrid.h"
 #include "string.h"
 
 using namespace LAMMPS_NS;
@@ -34,24 +35,41 @@ using namespace LAMMPS_NS;
 ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) : 
   Compute(lmp, narg, arg)
 {
-  if (narg != 3) error->all(FLERR,"Illegal compute softcore/grid command");
-  if (igroup) error->all(FLERR,"Compute softcore/grid must use group all");
+  if (narg != 3)
+    error->all(FLERR,"Illegal compute softcore/grid command");
 
-  // Certify the use of pair style hybrid:
-  if (strcmp(force->pair_style,"hybrid/softcore") != 0)
-    error->all(FLERR,"compute softcore/grid: use of pair style hybrid/softcore is mandatory");
+  if (igroup)
+    error->all(FLERR,"Compute softcore/grid must use group all");
 
-  int dim;
-  int *size = (int*) force->pair->extract("gridsize",dim);
-  size_vector = *size;
+  // Retrieve all lambda-related pair styles:
+  PairHybridSoftcore *hybrid = dynamic_cast<PairHybridSoftcore*>(force->pair);
+  if (hybrid) {
+    pair = new class PairSoftcore*[hybrid->nstyles];
+    npairs = 0;
+    for (int i = 0; i < hybrid->nstyles; i++)
+      if (pair[npairs] = dynamic_cast<class PairSoftcore*>(hybrid->styles[i]))
+        npairs++;
+    if (npairs == 0)
+      error->all(FLERR,"Compute softcore/grid requires a softcore-type pair style");
+  }
+  else {
+    pair = new class PairSoftcore*[1];
+    if (!(pair[0] = dynamic_cast<class PairSoftcore*>(force->pair)))
+      error->all(FLERR,"Compute softcore/grid requires a softcore-type pair style");
+  }
 
-  if (size_vector == 0)
-  error->all(FLERR,"Compute softcore/grid error: lambda grid not defined");
-  peflag = 1;
-  timeflag = 1;
-  scalar_flag = 0;
+  // Determine the number of nodes in the lambda grid:
+  int nodes = pair[0]->gridsize;
+  int all_equal = 1;
+  for (int i = 1; i < npairs; i++)
+    all_equal &= pair[i]->gridsize == nodes;
+  if (!all_equal)
+    error->all(FLERR,"compute softcore/grid: lambda grids have different numbers of nodes");
+  if (nodes == 0)
+    error->all(FLERR,"compute softcore/grid: no lambda grid has been defined");
+
   vector_flag = 1;
-  extvector = 1;
+  size_vector = nodes;
   vector = new double[size_vector];
 }
 
@@ -59,21 +77,21 @@ ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) :
 
 void ComputeSoftcoreGrid::compute_vector()
 {
- // invoked_scalar = update->ntimestep;
- // if (update->eflag_global != invoked_scalar)
-  //  error->all(FLERR,"Energy was not tallied on needed timestep");
-
-  int dim;
-  double *grid_energy = (double *) force->pair->extract("energy_grid",dim);
-  MPI_Allreduce(grid_energy,vector,size_vector,MPI_DOUBLE,MPI_SUM,world);
- 
-  int tail_flag;
-  force->pair->extract("tail_flag",tail_flag);
-  if (tail_flag) {
-    double *etailnode = (double *) force->pair->extract("etailnode",dim);
-    double volume = domain->xprd * domain->yprd * domain->zprd;
-    for (int k = 0; k < size_vector; k++)
-      vector[k] += etailnode[k]/volume;
+  // Compute lambda-related energy at every grid node:
+  for (int i = 0; i < size_vector; i++)
+    vector[i] = 0.0;
+  for (int i = 0; i < npairs; i++) {
+    double node_energy[size_vector];
+    if (!pair[i]->uptodate)
+      pair[i]->compute_grid();
+    MPI_Allreduce(pair[i]->evdwlnode,&node_energy[0],size_vector,MPI_DOUBLE,MPI_SUM,world);
+    if (pair[i]->tail_flag) {
+      double volume = domain->xprd*domain->yprd*domain->zprd;
+      for (int j = 0; j < size_vector; j++)
+        node_energy[j] += pair[i]->etailnode[j]/volume;
+    }
+    for (int j = 0; j < size_vector; j++)
+      vector[j] += node_energy[j];
   }
 }
 

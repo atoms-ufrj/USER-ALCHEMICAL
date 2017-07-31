@@ -46,6 +46,7 @@ class PairSoftcore : public Pair {
   double *weight;     // sampling weight for expanded ensemble
 
   void add_node_to_grid(double, double);
+  virtual void compute_grid() {};
 };
 
 }

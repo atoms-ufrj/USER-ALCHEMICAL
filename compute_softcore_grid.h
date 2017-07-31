@@ -21,6 +21,7 @@ ComputeStyle(softcore/grid,ComputeSoftcoreGrid)
 #define LMP_COMPUTE_SOFTCORE_GRID_H
 
 #include "compute.h"
+#include "pair_softcore.h"
 
 namespace LAMMPS_NS {
 
@@ -30,6 +31,10 @@ class ComputeSoftcoreGrid : public Compute {
   ~ComputeSoftcoreGrid() {}
   void init() {}
   void compute_vector();
+
+ private:
+  int npairs;
+  class PairSoftcore **pair;
 };
 
 }

@@ -891,37 +891,9 @@ double PairLJCutSoftcore::single(int i, int j, int itype, int jtype, double rsq,
 
 void *PairLJCutSoftcore::extract(const char *str, int &dim)
 {
-    //dim = 2;
-  //if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
-  //if (strcmp(str,"sigma") == 0) return (void *) sigma;
-  
-
-  if (strcmp(str,"gridsize") == 0) {
-    return (void *) &gridsize;
-  }
-  else if (strcmp(str,"gridflag") == 0) {
-    int flag = gridflag;
-    gridflag = 1;
-    return (void *) &flag;
-  }
-  if (strcmp(str,"tail_flag") == 0) {
-    return (void *) &tail_flag;
-  }
-  else if (strcmp(str,"weight") == 0) {
-    return (void *) &weight[0];
-  }
-  else if (strcmp(str,"lambdanode") == 0) {
-    return (void *) &lambdanode[0];
-  }
-  else if (strcmp(str,"etailnode") == 0) {
-    return (void *) &etailnode[0];
-  }
-  else if (strcmp(str,"energy_grid") == 0) {
-    if (!uptodate) compute_grid();
-    return (void *) &evdwlnode[0];
-  }
-  else
-    return NULL;
+  dim = 2;
+  if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
+  if (strcmp(str,"sigma") == 0) return (void *) sigma;
 }
 
 /* ---------------------------------------------------------------------- */

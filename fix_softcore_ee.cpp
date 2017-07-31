@@ -76,26 +76,21 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
 
   // Certify the use of pair style hybrid:
-  if (strcmp(force->pair_style,"hybrid/softcore") != 0)
+  PairHybridSoftcore *hybrid = dynamic_cast<PairHybridSoftcore*>(force->pair);
+  if (!hybrid)
     error->all(FLERR,"fix softcore/ee: use of pair style hybrid/softcore is mandatory");
 
   // Look for lambda-related pair styles:
-  PairHybridSoftcore *pair_hybrid = (PairHybridSoftcore *) force->pair;
+  pair = new class PairSoftcore*[hybrid->nstyles];
   npairs = 0;
-  for (int i = 0; i < pair_hybrid->nstyles; i++)
-    if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
+  for (int i = 0; i < hybrid->nstyles; i++)
+    if (pair[npairs] = dynamic_cast<class PairSoftcore*>(hybrid->styles[i]))
       npairs++;
   if (npairs == 0)
     error->all(FLERR,"fix softcore/ee: no pair styles associated to coupling parameter lambda");
-
-  // Retrieve all lambda-related pair styles:
-  pair = new class PairSoftcore*[npairs];
   compute_flag = new int[npairs];
-  int j = 0;
-  for (int i = 0; i < pair_hybrid->nstyles; i++)
-    if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0) {
-      pair[j++] = (class PairSoftcore *) pair_hybrid->styles[i];
-    }
+  for (int i = 0; i < npairs; i++)
+    compute_flag[i] = pair[i]->compute_flag;
 
   // Allocate force buffer:
   nmax = atom->nlocal;
@@ -118,6 +113,8 @@ FixSoftcoreEE::~FixSoftcoreEE()
   memory->destroy(eatom);
   memory->destroy(vatom);
   if (weight) memory->destroy(weight);
+  delete [] pair;
+  delete [] compute_flag;
 }
 
 /* ---------------------------------------------------------------------- */
