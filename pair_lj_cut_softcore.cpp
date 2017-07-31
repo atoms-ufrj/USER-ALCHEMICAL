@@ -108,7 +108,6 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
   firstneigh = list->firstneigh;
   
   // loop over neighbors of my atoms
-//printf("%d ",lambda);
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
@@ -122,7 +121,7 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
     for (jj = 0; jj < jnum; jj++) {
 
       j = jlist[jj];
-      factor_lj = special_lj[sbmask(j)]; //*//
+      factor_lj = special_lj[sbmask(j)];
       j &= NEIGHMASK;
 
       delx = xtmp - x[j][0];
@@ -130,7 +129,6 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
       delz = ztmp - x[j][2];
       rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
-//if (itype == 2 && jtype == 1)  {printf("%d %d %12.5f\n",itype,jtype,factor_lj);
 
       if (rsq < cutsq[itype][jtype]) {
 
@@ -930,21 +928,17 @@ void *PairLJCutSoftcore::extract(const char *str, int &dim)
 
 void PairLJCutSoftcore::modify_params(int narg, char **arg)
 {
-  if (narg == 0) error->all(FLERR,"Illegal pair_modify command");
+  if (narg == 0)
+    error->all(FLERR,"Illegal pair_modify command");
 
-  int nkwds = 11;
-  char **keyword = new char*[nkwds];
-  keyword[0] = (char*) "alpha";
-  keyword[1] = (char*)"n";
-  keyword[2] = (char*)"p";
-  keyword[3] = (char*)"lambda";
-  keyword[4] = (char*)"link";
-  keyword[5] = (char*)"rev_link";
-  keyword[6] = (char*)"unlink";
-  keyword[7] = (char*)"set_grid";
-  keyword[8] = (char*)"add_node";
-  keyword[9] = (char*)"set_weights";
-  keyword[10] = (char*)"add_weight";
+  int nkwds = 3;
+  char *keyword[nkwds];
+  keyword[0] = (char*)"link";
+  keyword[1] = (char*)"rev_link";
+  keyword[2] = (char*)"unlink";
+
+  int ns = 0;
+  int skip[narg];
 
   int m;
   int iarg = 0;
@@ -955,91 +949,37 @@ void PairLJCutSoftcore::modify_params(int narg, char **arg)
       if (strcmp(arg[iarg],keyword[m]) == 0)
         break;
 
-    if (m == nkwds) { // no keyword found: call Pair:modify_params and return:
-
-      Pair::modify_params(narg, arg);
-      return;
-
-    }
-    else if (m < 4) { // alpha, n, p, or lambda:
-
-      if (iarg+2 > narg) error->all(FLERR,"Illegal pair_modify command");
-      double value = force->numeric(FLERR,arg[iarg+1]);
-      if (m == 0) alpha = value;
-      else if (m == 1) exponent_n = value;
-      else if (m == 2) exponent_p = value;
-      else {
-        if ( (value < 0.0) || (value > 1.0) )
-          error->all(FLERR,"Coupling parameter value out of range");
-        lambda = value;
-      }
-      iarg += 2;
-
-    }
-    else if ( m < 7 ) { // link, rev_link, and unlink
-
+    if (m < 3) { // link, rev_link, and unlink
       int ilo,ihi,jlo,jhi,flag,count,i,j;
       if (iarg+3 > narg)
         error->all(FLERR,"Illegal pair_modify command");
       if (!allocated) allocate();
       force->bounds(FLERR,arg[iarg+1],atom->ntypes,ilo,ihi);
       force->bounds(FLERR,arg[iarg+2],atom->ntypes,jlo,jhi);
-      if (m == 4) flag = +1;
-      else if (m == 5) flag = -1;
-      else flag =  0;
+      if (m == 0)
+        flag = +1;
+      else if (m == 1)
+        flag = -1;
+      else
+        flag =  0;
       for (i = ilo; i <= ihi; i++)
         for (j = MAX(jlo,i); j <= jhi; j++) {
           linkflag[i][j] = linkflag[j][i] = flag;
           count++;
         }
       if (count == 0)
-        error->all(FLERR,"Incorrect args for pair coefficients");
+        error->all(FLERR,"Illegal pair_modify command: incorrect args for pair coefficients");
       iarg += 3;
-     
     }
-    else if (m == 7) { // set_grid:
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal pair_modify command");
-      int nodes = force->numeric(FLERR,arg[iarg+1]);
-      gridsize = 0;
-      if (iarg+2+nodes > narg) 
-        error->all(FLERR,"Illegal pair_modify command");
-      for (int i = 0; i < nodes; i++) 
-        add_node_to_grid(force->numeric(FLERR,arg[iarg+2+i]),0.0);
-      iarg += 2+nodes;
-//      printf("%d", nodes);
-    }
-    else if (m == 8) { // add_node:
+    else // no keyword found - skip argument:
+      skip[ns++] = iarg++;
+  }
 
-      if (iarg+2 > narg) error->all(FLERR,"Illegal pair_modify command");
-      add_node_to_grid(force->numeric(FLERR,arg[iarg+1]),0.0);
-      iarg += 2;
-    
-    }
-    else if (m == 9) { // set_weights:
-
-      if (gridsize == 0)
-        error->all(FLERR,"Softcore lambda grid has not been defined");
-      if (iarg+1+gridsize > narg)
-        error->all(FLERR,"Illegal pair_modify command");
-      for (int i = 0; i < gridsize; i++)
-        weight[i] = force->numeric(FLERR,arg[iarg+1+i]);
-      iarg += 1+gridsize;
-
-    }
-    else if (m == 10) { // add_weight:
-
-      if (iarg+3 > narg)
-        error->all(FLERR,"Illegal pair_modify command");
-      int i = force->numeric(FLERR,arg[iarg+1]);
-      if ( (i < 1) || (i > gridsize))
-        error->all(FLERR,"Node index out of bounds");
-      weight[i-1] = force->numeric(FLERR,arg[iarg+2]);
-      iarg += 3;
-    
-    }
-    else // unknown keyword:
-      error->all(FLERR,"Illegal pair_modify command: unknown keyord");
+  // Call parent-class routine with skipped arguments:
+  if (ns > 0) {
+    for (int i = 0; i < ns; i++)
+      arg[i] = arg[skip[i]];
+      PairSoftcore::modify_params(ns, arg);
   }
 }
 

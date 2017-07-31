@@ -11,11 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifdef PAIR_CLASS
-
-//PairStyle(lj/softcore/base,PairSoftcore)
-
-#else
+#ifndef PAIR_CLASS
 
 #ifndef LMP_PAIR_SOFTCORE_H
 #define LMP_PAIR_SOFTCORE_H

@@ -21,6 +21,7 @@
 #include "pair_softcore.h"
 #include "memory.h"
 #include "error.h"
+#include "force.h"
 
 using namespace LAMMPS_NS;
 
@@ -90,7 +91,89 @@ void PairSoftcore::add_node_to_grid(double lambda_value, double weight_value)
 
 void PairSoftcore::modify_params(int narg, char **arg)
 {
+  if (narg == 0)
+    error->all(FLERR,"Illegal pair_modify command");
+
+  int nkwds = 8;
+  char *keyword[nkwds];
+  keyword[0] = (char*)"alpha";
+  keyword[1] = (char*)"n";
+  keyword[2] = (char*)"p";
+  keyword[3] = (char*)"lambda";
+  keyword[4] = (char*)"set_grid";
+  keyword[5] = (char*)"add_node";
+  keyword[6] = (char*)"set_weights";
+  keyword[7] = (char*)"add_weight";
+
+  int ns = 0;
+  int skip[narg];
+
+  int m;
+  int iarg = 0;
+  while (iarg < narg) {
+
+    // Search for a keyword:
+    for (m = 0; m < nkwds; m++)
+      if (strcmp(arg[iarg],keyword[m]) == 0)
+        break;
+
+    if (m < 4) { // alpha, n, p, or lambda:
+      if (iarg+2 > narg) error->all(FLERR,"Illegal pair_modify command");
+      double value = force->numeric(FLERR,arg[iarg+1]);
+      if (m == 0) alpha = value;
+      else if (m == 1) exponent_n = value;
+      else if (m == 2) exponent_p = value;
+      else {
+        if ( (value < 0.0) || (value > 1.0) )
+          error->all(FLERR,"Coupling parameter value out of range");
+        lambda = value;
+      }
+      iarg += 2;
+    }
+    else if (m == 4) { // set_grid:
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal pair_modify command");
+      int nodes = force->numeric(FLERR,arg[iarg+1]);
+      gridsize = 0;
+      if (iarg+2+nodes > narg) 
+        error->all(FLERR,"Illegal pair_modify command");
+      for (int i = 0; i < nodes; i++) 
+        add_node_to_grid(force->numeric(FLERR,arg[iarg+2+i]),0.0);
+      iarg += 2+nodes;
+    }
+    else if (m == 5) { // add_node:
+      if (iarg+2 > narg) error->all(FLERR,"Illegal pair_modify command");
+      add_node_to_grid(force->numeric(FLERR,arg[iarg+1]),0.0);
+      iarg += 2;
+    }
+    else if (m == 6) { // set_weights:
+      if (gridsize == 0)
+        error->all(FLERR,"Softcore lambda grid has not been defined");
+      if (iarg+1+gridsize > narg)
+        error->all(FLERR,"Illegal pair_modify command");
+      for (int i = 0; i < gridsize; i++)
+        weight[i] = force->numeric(FLERR,arg[iarg+1+i]);
+      iarg += 1+gridsize;
+    }
+    else if (m == 7) { // add_weight:
+      if (iarg+3 > narg)
+        error->all(FLERR,"Illegal pair_modify command");
+      int i = force->numeric(FLERR,arg[iarg+1]);
+      if ( (i < 1) || (i > gridsize))
+        error->all(FLERR,"Node index out of bounds");
+      weight[i-1] = force->numeric(FLERR,arg[iarg+2]);
+      iarg += 3;
+    }
+    else // no keyword found - skip argument:
+      skip[ns++] = iarg++;
+  }
+
+  // Call parent-class routine with skipped arguments:
+  if (ns > 0) {
+    for (int i = 0; i < ns; i++)
+      arg[i] = arg[skip[i]];
+      Pair::modify_params(ns, arg);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
-

@@ -55,7 +55,7 @@ thermo_modify	norm no
 
 thermo		5
 
-thermo_style	custom step f_2 temp pe ke etotal press c_E[*]
+thermo_style	custom step f_2[*] temp pe ke etotal press c_E[*]
 
 #run_style	ee/softcore ${nevery} ${seed} ${temp} ${nfreq}
 
