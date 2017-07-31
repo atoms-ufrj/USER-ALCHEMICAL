@@ -25,6 +25,7 @@
 #include "domain.h"
 #include "error.h"
 #include "pair_hybrid.h"
+#include "string.h"
 
 using namespace LAMMPS_NS;
 
@@ -35,6 +36,10 @@ ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg != 3) error->all(FLERR,"Illegal compute softcore/grid command");
   if (igroup) error->all(FLERR,"Compute softcore/grid must use group all");
+
+  // Certify the use of pair style hybrid:
+  if (strcmp(force->pair_style,"hybrid/softcore") != 0)
+    error->all(FLERR,"compute softcore/grid: use of pair style hybrid/softcore is mandatory");
 
   int dim;
   int *size = (int*) force->pair->extract("gridsize",dim);

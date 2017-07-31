@@ -17,6 +17,7 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_softcore_ee.h"
+#include "pair_hybrid_softcore.h"
 #include "update.h"
 #include "force.h"
 #include "pair.h"
@@ -34,7 +35,6 @@
 #include "modify.h"
 #include "compute.h"
 #include "timer.h"
-#include "pair_hybrid_ee.h"
 #include "memory.h"
 #include "integrate.h"
 
@@ -76,11 +76,11 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
 
   // Certify the use of pair style hybrid:
-  if (strcmp(force->pair_style,"hybrid/ee") != 0)
-    error->all(FLERR,"fix softcore/ee: use of pair style hybrid/ee is mandatory");
+  if (strcmp(force->pair_style,"hybrid/softcore") != 0)
+    error->all(FLERR,"fix softcore/ee: use of pair style hybrid/softcore is mandatory");
 
   // Look for lambda-related pair styles:
-  PairHybridEE *pair_hybrid = (PairHybridEE *) force->pair;
+  PairHybridSoftcore *pair_hybrid = (PairHybridSoftcore *) force->pair;
   npairs = 0;
   for (int i = 0; i < pair_hybrid->nstyles; i++)
     if (strcmp(pair_hybrid->keywords[i],"lj/cut/softcore") == 0)
@@ -190,7 +190,7 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
   if (update->ntimestep % nevery) return;
 
   int n = number_of_atoms();
-  PairHybridEE *hybrid = (PairHybridEE *) force->pair;
+  PairHybridSoftcore *hybrid = (PairHybridSoftcore *) force->pair;
 
   // Restore original compute flags:
   for (int i = 0; i < npairs; i++)

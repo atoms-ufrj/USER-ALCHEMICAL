@@ -22,6 +22,7 @@ namespace LAMMPS_NS {
 
 class PairSoftcore : public Pair {
  friend class FixSoftcoreEE;
+ friend class ComputeSoftcoreGrid;
 
  public:
   PairSoftcore(class LAMMPS *);

@@ -10,7 +10,7 @@ atom_style	full
 
 bond_style	harmonic
 angle_style	harmonic
-pair_style	hybrid/ee  lj/cut/softcore ${rc} lj/cut/coul/long ${rc}
+pair_style	hybrid/softcore  lj/cut/softcore ${rc} lj/cut/coul/long ${rc}
 #pair_style	hybrid lj/cut/coul/long ${rc} lj/cut ${rc}
 kspace_style 		pppm 1e-4
 pair_modify	mix arithmetic
