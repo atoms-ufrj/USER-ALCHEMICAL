@@ -27,6 +27,7 @@ class PairSoftcore : public Pair {
  public:
   PairSoftcore(class LAMMPS *);
   virtual ~PairSoftcore();
+  void init_style();
   void modify_params(int narg, char **arg);
 
  protected:

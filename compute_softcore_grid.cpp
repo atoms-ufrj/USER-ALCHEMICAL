@@ -21,9 +21,7 @@
 #include "compute_softcore_grid.h"
 #include "pair_hybrid_softcore.h"
 #include "pair_softcore.h"
-#include "update.h"
 #include "force.h"
-#include "pair.h"
 #include "domain.h"
 #include "error.h"
 #include "string.h"
@@ -81,6 +79,8 @@ void ComputeSoftcoreGrid::compute_vector()
   for (int i = 0; i < size_vector; i++)
     vector[i] = 0.0;
   for (int i = 0; i < npairs; i++) {
+    if (pair[i]->gridsize != size_vector)
+      error->all(FLERR,"compute softcore/grid: number of lambda nodes has changed");
     double node_energy[size_vector];
     if (!pair[i]->uptodate)
       pair[i]->compute_grid();

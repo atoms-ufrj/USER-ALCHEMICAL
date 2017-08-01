@@ -34,7 +34,7 @@ PairSoftcore::PairSoftcore(LAMMPS *lmp) : Pair(lmp)
   exponent_p = 1.0;
   lambda = 1.0;
 
-  gridflag = 0;
+  gridflag = 1;
   gridsize = 0;
   uptodate = 0;
   memory->create(lambdanode,0,"pair_softcore:lambdanode");
@@ -53,6 +53,22 @@ PairSoftcore::~PairSoftcore()
   memory->destroy(etailnode);
   memory->destroy(weight);
 }
+/* ---------------------------------------------------------------------- */
+
+void PairSoftcore::init_style()
+{
+  // print grid information:
+  if ( (gridsize > 0) && (comm->me == 0) ) {
+    if (screen) fprintf(screen,"Lambda grid: (");
+    if (logfile) fprintf(logfile,"Lambda grid: (");
+    for (int k = 0; k < gridsize-1; k++) {
+      if (screen) fprintf(screen,"%g; ",lambdanode[k]);
+      if (logfile) fprintf(logfile,"%g; ",lambdanode[k]);
+    }
+    if (screen) fprintf(screen,"%g)\n",lambdanode[gridsize-1]);
+    if (logfile) fprintf(logfile,"%g)\n",lambdanode[gridsize-1]);
+  }
+}
 
 /* ----------------------------------------------------------------------
    adds a new node to the lambda grid, in increasing order of lambdas
@@ -66,8 +82,13 @@ void PairSoftcore::add_node_to_grid(double lambda_value, double weight_value)
   if ( (lambda_value < 0.0) || (lambda_value > 1.0) )
     error->all(FLERR,"Coupling parameter value is out of range");
   memcpy(backup,lambdanode,sizeof(double)*gridsize);
+
   gridsize++;
   memory->grow(lambdanode,gridsize,"pair_softcore:lambdanode");
+  memory->grow(evdwlnode,gridsize,"pair_softcore:evdwlnode");
+  memory->grow(etailnode,gridsize,"pair_softcore:etailnode");
+  memory->grow(weight,gridsize,"pair_softcore:weight");
+
   j = 0;
   for (i = 0; i < gridsize-1; i++)
     if (backup[i] < lambda_value) {
@@ -85,6 +106,7 @@ void PairSoftcore::add_node_to_grid(double lambda_value, double weight_value)
   for (i = j+1; i < gridsize; i++)
     weight[i] = backup[i-1];
 
+  delete [] backup;
 }
 
 /* ---------------------------------------------------------------------- */
