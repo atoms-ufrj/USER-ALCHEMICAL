@@ -70,6 +70,11 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   else
     weight = NULL;
 
+  // Check if this fix preceeds all fixes with initial_integrate:
+  for (int i = 0; i < modify->nfix; i++)
+    if (modify->fmask[i] && INITIAL_INTEGRATE)
+      error->all(FLERR,"fix softcore/ee must preceed all time integration fixes");
+
   // Set fix softcore/ee properties:
   vector_flag = 1;
   size_vector = 2;
@@ -89,8 +94,6 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
   if (npairs == 0)
     error->all(FLERR,"fix softcore/ee: no pair styles associated to coupling parameter lambda");
   compute_flag = new int[npairs];
-  for (int i = 0; i < npairs; i++)
-    compute_flag[i] = pair[i]->compute_flag;
 
   // Allocate force buffer:
   nmax = atom->nlocal;
@@ -115,16 +118,23 @@ FixSoftcoreEE::~FixSoftcoreEE()
   if (weight) memory->destroy(weight);
   delete [] pair;
   delete [] compute_flag;
+  delete random;
 }
 
 /* ---------------------------------------------------------------------- */
 
 int FixSoftcoreEE::setmask()
 {
-  return PRE_FORCE | PRE_REVERSE | END_OF_STEP;
+  return INITIAL_INTEGRATE | PRE_REVERSE | END_OF_STEP | POST_RUN;
 }
 
-/* ---------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------
+   Before starting a run, certify that all softcore pair styles have
+   equally sized lambda grids. Then, check if the corresponding number
+   of weights has been specified. If there are no weights at all, specify
+   all weights as zero. Finally, call change_node(0) so that the all pair
+   styles are reinitialized with the corresponding lambda value.
+------------------------------------------------------------------------- */
 
 void FixSoftcoreEE::init()
 {
@@ -134,7 +144,7 @@ void FixSoftcoreEE::init()
   for (int i = 1; i < npairs; i++)
     all_equal &= pair[i]->gridsize == nodes;
   if (!all_equal)
-    error->all(FLERR,"fix softcore/ee: lambda grids have different numbers of nodes");
+    error->all(FLERR,"fix softcore/ee: pair styles have different numbers of nodes");
   if (nodes == 0)
     error->all(FLERR,"fix softcore/ee: no lambda grid has been defined");
 
@@ -160,27 +170,103 @@ void FixSoftcoreEE::init()
       }
   }
 
-  // Store compute flags of pair styles:
-  for (int i = 0; i < npairs; i++)
-    compute_flag[i] = pair[i]->compute_flag;
-
-  // Go to the first node:
-  change_node(0);
+  // Start simulation at the first lambda node:
   downhill = 0;
+  change_node(0);
 }
 
-/*----------------------------------------------------------------------------*/
+/* ----------------------------------------------------------------------
+   After forces, energies, and virials are initially computed, deactivate
+   the computation of softcore pair styles, but save their current
+   compute flags to be restored at the end of the run.
+------------------------------------------------------------------------- */
 
-void FixSoftcoreEE::pre_force(int vflag)
+void FixSoftcoreEE::setup_pre_reverse(int eflag, int vflag)
 {
-  if (update->ntimestep % nevery) return;
-
-  // Disable computation of lambda-related pair styles:
-  for (int i = 0; i < npairs; i++)
+  // Store compute flags and disable computation of lambda-related pair styles:
+  for (int i = 0; i < npairs; i++) {
+    compute_flag[i] = pair[i]->compute_flag;
     pair[i]->compute_flag = 0;
+  }
+  must_change_node = 0;
 }
 
-/*----------------------------------------------------------------------------*/
+/* ----------------------------------------------------------------------
+   Enact node changing if this was decided in the previous time step.
+   This is done before the initial_integrate routines of integration
+   methods are executed.
+------------------------------------------------------------------------- */
+
+void FixSoftcoreEE::initial_integrate(int vflag)
+{
+  if ( (update->ntimestep - 1) % nevery) return;
+
+  if (must_change_node) {
+
+    int n = number_of_atoms();
+    class Pair *hybrid = force->pair;
+
+    // Restore lambda-free forces, energies, and virials previously stored:
+    for (int i = 0; i < n; i++) {
+      atom->f[i][0] = this->f[i][0];
+      atom->f[i][1] = this->f[i][1];
+      atom->f[i][2] = this->f[i][2];
+    }
+    if (hybrid->eflag_global) {
+      hybrid->eng_vdwl = this->eng_vdwl;
+      hybrid->eng_coul = this->eng_coul;
+    }
+    if (hybrid->vflag_global)
+      for (int k = 0; k < 6; k++)
+        hybrid->virial[k] = this->virial[k];
+    if (hybrid->eflag_atom)
+      for (int j = 0; j < n; j++)
+        hybrid->eatom[j] = this->eatom[j];
+    if (hybrid->vflag_atom)
+      for (int j = 0; j < n; j++)
+        for (int k = 0; k < 6; k++)
+          hybrid->vatom[j][k] = this->vatom[j][k];
+
+    // Change to the new node:
+    change_node(new_node);
+
+    // Compute and add pair interactions using the new lambda value:
+    for (int i = 0; i < npairs; i++) {
+      class PairSoftcore *ipair = pair[i];
+      ipair->compute(this->eflag,this->vflag);
+      ipair->uptodate = 1;
+      if (ipair->eflag_global) {
+        hybrid->eng_vdwl += ipair->eng_vdwl;
+        hybrid->eng_coul += ipair->eng_coul;
+      }
+      if (ipair->vflag_global)
+        for (int k = 0; k < 6; k++)
+          hybrid->virial[k] += ipair->virial[k];
+      if (ipair->eflag_atom)
+        for (int j = 0; j < n; j++)
+          hybrid->eatom[j] += ipair->eatom[j];
+      if (ipair->vflag_atom)
+        for (int j = 0; j < n; j++)
+          for (int k = 0; k < 6; k++)
+            hybrid->vatom[j][k] += ipair->vatom[j][k];
+    }
+
+    // Reverse communicate forces:
+    if (force->newton_pair)
+      comm->reverse_comm();
+
+    // Perform post-force actions:
+    if (modify->n_post_force)
+      modify->post_force(this->vflag);
+  }
+}
+
+/* ----------------------------------------------------------------------
+   After lambda-free forces, energies, and virials have been computed,
+   compute the softcore pair interactions with the current lambda value
+   and decide if a node change must be carried out. If so, store the
+   lambda-free properties before adding the newly computed terms.
+------------------------------------------------------------------------- */
 
 void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
 {
@@ -188,10 +274,6 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
 
   int n = number_of_atoms();
   PairHybridSoftcore *hybrid = (PairHybridSoftcore *) force->pair;
-
-  // Restore original compute flags:
-  for (int i = 0; i < npairs; i++)
-    pair[i]->compute_flag = compute_flag[i];
 
   // Compute and store pair interactions using the current lambda value:
   for (int i = 0; i < n; i++)
@@ -221,8 +303,8 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
   new_node = select_node( energy );
 
   // Change node if necessary:
-  node_changed = new_node != current_node;
-  if (node_changed) {
+  must_change_node = new_node != current_node;
+  if (must_change_node) {
 
     // Store previously computed forces, energies, and virials:
     for (int i = 0; i < n; i++) {
@@ -276,66 +358,11 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
 
 /*----------------------------------------------------------------------------*/
 
-void FixSoftcoreEE::end_of_step()
+void FixSoftcoreEE::post_run()
 {
-  if (node_changed) {
-
-    int n = number_of_atoms();
-    class Pair *hybrid = force->pair;
-
-    // Restore previous forces, energies, and virials:
-    for (int i = 0; i < n; i++) {
-      atom->f[i][0] = this->f[i][0];
-      atom->f[i][1] = this->f[i][1];
-      atom->f[i][2] = this->f[i][2];
-    }
-    if (hybrid->eflag_global) {
-      hybrid->eng_vdwl = this->eng_vdwl;
-      hybrid->eng_coul = this->eng_coul;
-    }
-    if (hybrid->vflag_global)
-      for (int k = 0; k < 6; k++)
-        hybrid->virial[k] = this->virial[k];
-    if (hybrid->eflag_atom)
-      for (int j = 0; j < n; j++)
-        hybrid->eatom[j] = this->eatom[j];
-    if (hybrid->vflag_atom)
-      for (int j = 0; j < n; j++)
-        for (int k = 0; k < 6; k++)
-          hybrid->vatom[j][k] = this->vatom[j][k];
-
-    // Change to the new node:
-    change_node(new_node);
-
-    // Compute and add pair interactions using the new lambda value:
-    for (int i = 0; i < npairs; i++) {
-      class PairSoftcore *ipair = pair[i];
-      ipair->compute(eflag,vflag);
-      ipair->uptodate = 1;
-      if (ipair->eflag_global) {
-        hybrid->eng_vdwl += ipair->eng_vdwl;
-        hybrid->eng_coul += ipair->eng_coul;
-      }
-      if (ipair->vflag_global)
-        for (int k = 0; k < 6; k++)
-          hybrid->virial[k] += ipair->virial[k];
-      if (ipair->eflag_atom)
-        for (int j = 0; j < n; j++)
-          hybrid->eatom[j] += ipair->eatom[j];
-      if (ipair->vflag_atom)
-        for (int j = 0; j < n; j++)
-          for (int k = 0; k < 6; k++)
-            hybrid->vatom[j][k] += ipair->vatom[j][k];
-    }
-
-    // Reverse communicate forces:
-    if (force->newton_pair)
-      comm->reverse_comm();
-
-    // Perform post-force actions:
-    if (modify->n_post_force)
-      modify->post_force(vflag);
-  }
+  // Restore compute flags:
+  for (int i = 0; i < npairs; i++)
+    pair[i]->compute_flag = compute_flag[i];
 }
 
 /*----------------------------------------------------------------------------*/
@@ -373,7 +400,9 @@ int FixSoftcoreEE::select_node(double *energy)
   return node;
 }
 
-/* ---------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------
+   Perform lambda node changing
+------------------------------------------------------------------------- */
 
 void FixSoftcoreEE::change_node(int node)
 {

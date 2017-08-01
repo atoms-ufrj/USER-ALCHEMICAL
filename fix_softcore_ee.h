@@ -32,15 +32,16 @@ class FixSoftcoreEE : public Fix {
   ~FixSoftcoreEE();
   int setmask();
   void init();
-  void pre_force(int);
+  void setup_pre_reverse(int,int);
+  void initial_integrate(int);
   void pre_reverse(int,int);
-  void end_of_step();
+  void post_run();
   double compute_vector(int);
 
  private:
   int current_node;
   int new_node;
-  int node_changed;
+  int must_change_node;
   int seed;
   double minus_beta;
 
