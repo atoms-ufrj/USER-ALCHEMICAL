@@ -37,21 +37,16 @@ PairSoftcore::PairSoftcore(LAMMPS *lmp) : Pair(lmp)
   gridflag = 1;
   gridsize = 0;
   uptodate = 0;
-  memory->create(lambdanode,0,"pair_softcore:lambdanode");
-  memory->create(evdwlnode,0,"pair_softcore:evdwlnode");
-  memory->create(etailnode,0,"pair_softcore:etailnode");
-  memory->create(weight,0,"pair_softcore:weight");
+  allocate();
 }
 
 /* ---------------------------------------------------------------------- */
 
 PairSoftcore::~PairSoftcore()
 {
-  memory->destroy(linkflag);
   memory->destroy(lambdanode);
   memory->destroy(evdwlnode);
   memory->destroy(etailnode);
-  memory->destroy(weight);
 }
 /* ---------------------------------------------------------------------- */
 
@@ -70,24 +65,33 @@ void PairSoftcore::init_style()
   }
 }
 
+/* ---------------------------------------------------------------------- */
+
+void PairSoftcore::allocate()
+{
+  memory->create(lambdanode,0,"pair_softcore:lambdanode");
+  memory->create(evdwlnode,0,"pair_softcore:evdwlnode");
+  memory->create(etailnode,0,"pair_softcore:etailnode");
+}
+
 /* ----------------------------------------------------------------------
    adds a new node to the lambda grid, in increasing order of lambdas
 ------------------------------------------------------------------------- */
 
-void PairSoftcore::add_node_to_grid(double lambda_value, double weight_value)
+void PairSoftcore::add_node_to_grid(double lambda_value)
 {
   int i,j;
-  double *backup = new double[gridsize];
 
   if ( (lambda_value < 0.0) || (lambda_value > 1.0) )
     error->all(FLERR,"Coupling parameter value is out of range");
+
+  double *backup = new double[gridsize];
   memcpy(backup,lambdanode,sizeof(double)*gridsize);
 
   gridsize++;
   memory->grow(lambdanode,gridsize,"pair_softcore:lambdanode");
   memory->grow(evdwlnode,gridsize,"pair_softcore:evdwlnode");
   memory->grow(etailnode,gridsize,"pair_softcore:etailnode");
-  memory->grow(weight,gridsize,"pair_softcore:weight");
 
   j = 0;
   for (i = 0; i < gridsize-1; i++)
@@ -97,15 +101,6 @@ void PairSoftcore::add_node_to_grid(double lambda_value, double weight_value)
     } else
       lambdanode[i+1] = backup[i];
   lambdanode[j] = lambda_value;
-
-  memcpy(backup,weight,sizeof(double)*(gridsize-1));
-  memory->grow(weight,gridsize,"pair_softcore:weight");
-  for (i = 0; i < j; i++)
-    weight[i] = backup[i];
-  weight[j] = weight_value;
-  for (i = j+1; i < gridsize; i++)
-    weight[i] = backup[i-1];
-
   delete [] backup;
 }
 
@@ -116,7 +111,7 @@ void PairSoftcore::modify_params(int narg, char **arg)
   if (narg == 0)
     error->all(FLERR,"Illegal pair_modify command");
 
-  int nkwds = 8;
+  int nkwds = 6;
   char *keyword[nkwds];
   keyword[0] = (char*)"alpha";
   keyword[1] = (char*)"n";
@@ -124,8 +119,6 @@ void PairSoftcore::modify_params(int narg, char **arg)
   keyword[3] = (char*)"lambda";
   keyword[4] = (char*)"set_grid";
   keyword[5] = (char*)"add_node";
-  keyword[6] = (char*)"set_weights";
-  keyword[7] = (char*)"add_weight";
 
   int ns = 0;
   int skip[narg];
@@ -160,31 +153,13 @@ void PairSoftcore::modify_params(int narg, char **arg)
       if (iarg+2+nodes > narg) 
         error->all(FLERR,"Illegal pair_modify command");
       for (int i = 0; i < nodes; i++) 
-        add_node_to_grid(force->numeric(FLERR,arg[iarg+2+i]),0.0);
+        add_node_to_grid(force->numeric(FLERR,arg[iarg+2+i]));
       iarg += 2+nodes;
     }
     else if (m == 5) { // add_node:
       if (iarg+2 > narg) error->all(FLERR,"Illegal pair_modify command");
-      add_node_to_grid(force->numeric(FLERR,arg[iarg+1]),0.0);
+      add_node_to_grid(force->numeric(FLERR,arg[iarg+1]));
       iarg += 2;
-    }
-    else if (m == 6) { // set_weights:
-      if (gridsize == 0)
-        error->all(FLERR,"Softcore lambda grid has not been defined");
-      if (iarg+1+gridsize > narg)
-        error->all(FLERR,"Illegal pair_modify command");
-      for (int i = 0; i < gridsize; i++)
-        weight[i] = force->numeric(FLERR,arg[iarg+1+i]);
-      iarg += 1+gridsize;
-    }
-    else if (m == 7) { // add_weight:
-      if (iarg+3 > narg)
-        error->all(FLERR,"Illegal pair_modify command");
-      int i = force->numeric(FLERR,arg[iarg+1]);
-      if ( (i < 1) || (i > gridsize))
-        error->all(FLERR,"Node index out of bounds");
-      weight[i-1] = force->numeric(FLERR,arg[iarg+2]);
-      iarg += 3;
     }
     else // no keyword found - skip argument:
       skip[ns++] = iarg++;
@@ -199,3 +174,20 @@ void PairSoftcore::modify_params(int narg, char **arg)
 }
 
 /* ---------------------------------------------------------------------- */
+
+void PairSoftcore::write_restart(FILE *fp)
+{
+  fwrite(&gridsize,sizeof(int),1,fp);
+  fwrite(lambdanode,sizeof(double),gridsize,fp);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairSoftcore::read_restart(FILE *fp)
+{
+  if (comm->me == 0) fread(&gridsize,sizeof(int),1,fp);
+  MPI_Bcast(&gridsize,1,MPI_INT,0,world);
+  allocate();
+  if (comm->me == 0) fread(lambdanode,sizeof(double),gridsize,fp);
+  MPI_Bcast(lambdanode,gridsize,MPI_DOUBLE,0,world);
+}

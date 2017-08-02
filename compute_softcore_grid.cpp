@@ -25,6 +25,8 @@
 #include "domain.h"
 #include "error.h"
 #include "string.h"
+#include "atom.h"
+#include "memory.h"
 
 using namespace LAMMPS_NS;
 
@@ -69,6 +71,17 @@ ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) :
   vector_flag = 1;
   size_vector = nodes;
   vector = new double[size_vector];
+
+  nmax = atom->nlocal;
+  if (force->newton_pair) nmax += atom->nghost;
+  memory->create(f,nmax,3,"compute_softcore_grid::f");
+}
+
+/* ---------------------------------------------------------------------- */
+
+ComputeSoftcoreGrid::~ComputeSoftcoreGrid()
+{
+  memory->destroy(f);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -82,8 +95,13 @@ void ComputeSoftcoreGrid::compute_vector()
     if (pair[i]->gridsize != size_vector)
       error->all(FLERR,"compute softcore/grid: number of lambda nodes has changed");
     double node_energy[size_vector];
-    if (!pair[i]->uptodate)
-      pair[i]->compute_grid();
+    if (!pair[i]->uptodate) {
+      int n = number_of_atoms();
+      std::swap(f,atom->f);
+      pair[i]->gridflag = 1;
+      pair[i]->compute(0,0);
+      std::swap(atom->f,f);
+    }
     MPI_Allreduce(pair[i]->evdwlnode,&node_energy[0],size_vector,MPI_DOUBLE,MPI_SUM,world);
     if (pair[i]->tail_flag) {
       double volume = domain->xprd*domain->yprd*domain->zprd;
@@ -93,5 +111,21 @@ void ComputeSoftcoreGrid::compute_vector()
     for (int j = 0; j < size_vector; j++)
       vector[j] += node_energy[j];
   }
+}
+
+/* ----------------------------------------------------------------------
+   Return the size of per-atom arrays (increase storage space if needed)
+------------------------------------------------------------------------- */
+
+int ComputeSoftcoreGrid::number_of_atoms()
+{
+  int n = atom->nlocal;
+  if (force->newton_pair)
+    n += atom->nghost;
+  if (n > nmax) {
+    nmax = n;
+    memory->grow(f,nmax,3,"compute_softcore_grid::f");
+  }
+  return n;
 }
 

@@ -32,10 +32,8 @@ class FixSoftcoreEE : public Fix {
   ~FixSoftcoreEE();
   int setmask();
   void init();
-  void setup_pre_reverse(int,int);
   void initial_integrate(int);
   void pre_reverse(int,int);
-  void post_run();
   double compute_vector(int);
 
  private:
@@ -59,7 +57,7 @@ class FixSoftcoreEE : public Fix {
   class PairSoftcore **pair;
 
   int nmax;
-  double **f_old;
+  double **f_soft;
 
   int eflag;
   int vflag;

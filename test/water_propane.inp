@@ -4,7 +4,7 @@ variable	seed equal 6384
 variable	temp equal 300.0
 variable	nevery equal 10
 variable	nfreq equal 10
-variable        softcore string lj/cut/softcore/old
+variable        softcore string lj/cut/softcore
 units		real
 atom_style	full
 
@@ -37,16 +37,12 @@ delete_bonds    all bond 1
 delete_bonds    all angle 1
 delete_bonds    all bond 2
 delete_bonds    all angle 2
-#neigh_modify    exclude molecule/intra all
 
 pair_modify     pair ${softcore} alpha 0.5 n 1 p 1
 pair_modify     pair ${softcore} set_grid 16 0.0 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0
 
 fix		2 all softcore/ee 5 123 300
 fix		1 all rigid/nvt/small molecule temp 300 300 100
-#fix		1 all rigid/nvt molecule temp 300 300 100
-#run		1000
-#reset_timestep  0
 compute         E all softcore/grid
 
 thermo_modify	norm no
@@ -64,9 +60,5 @@ variable	delta_e equal round(10000*(c_pe-c_thermo_pe))
 variable	delta_p equal round(10000*(c_press-v_press))
 
 thermo_style	custom step f_2[*] temp pe c_pe v_delta_e c_press v_press v_delta_p c_E[*]
-#thermo_style	custom step f_2[*] temp pe press c_E[*]
-#thermo_style	custom step temp pe press
-
 
 run		200
-#run		3000000

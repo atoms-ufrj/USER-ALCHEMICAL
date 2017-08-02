@@ -28,13 +28,17 @@ namespace LAMMPS_NS {
 class ComputeSoftcoreGrid : public Compute {
  public:
   ComputeSoftcoreGrid(class LAMMPS *, int, char **);
-  ~ComputeSoftcoreGrid() {}
+  ~ComputeSoftcoreGrid();
   void init() {}
   void compute_vector();
 
  private:
   int npairs;
   class PairSoftcore **pair;
+
+  int nmax;
+  double **f;
+  int number_of_atoms();
 };
 
 }

@@ -29,25 +29,21 @@ class PairSoftcore : public Pair {
   virtual ~PairSoftcore();
   void init_style();
   void modify_params(int narg, char **arg);
+  void write_restart(FILE *);
+  void read_restart(FILE *);
 
  protected:
   double alpha, exponent_n, exponent_p;  // softcore model parameters
   double lambda;                         // coupling parameter value
-  int    **linkflag;                     /* +1 for directly linked pairs
-                                             0 for unlinked pairs
-                                            -1 for reversely linked pairs */
-  int    *linkedtype;                    // 1 if type belongs to any linked pair
-
   int    gridflag;    // 1 if grid must be computed in the current step
   int    uptodate;    // 1 if grid was computed in the latest step
   int    gridsize;    // number of nodes in the grid
   double *lambdanode; // lambda value at each node
   double *evdwlnode;  // total pairwise interaction energy at each node
   double *etailnode;  // tail correction for energy at each node
-  double *weight;     // sampling weight for expanded ensemble
 
-  void add_node_to_grid(double, double);
-  virtual void compute_grid() {};
+  void allocate();
+  void add_node_to_grid(double);
 };
 
 }
