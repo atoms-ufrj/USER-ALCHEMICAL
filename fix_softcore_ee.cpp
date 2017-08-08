@@ -226,6 +226,7 @@ void FixSoftcoreEE::initial_integrate(int vflag)
     // Compute and add pair interactions using the new lambda value:
     for (int i = 0; i < npairs; i++) {
       class PairSoftcore *ipair = pair[i];
+      ipair->gridflag = 0;
       ipair->compute(this->eflag,this->vflag);
       ipair->uptodate = 1;
       if (ipair->eflag_global) {
