@@ -817,7 +817,7 @@ double PairMieCutSoftcore::single(int i, int j, int itype, int jtype, double rsq
     fforce = factor_mie*forcemie/rsq;
 
 
-    phimie = mie2[i][j]*(sinvcRA - sinvc) - offset[itype][jtype];
+    phimie = mie2[itype][jtype]*(sinvcRA - sinvc) - offset[itype][jtype];
 
   return factor_mie*phimie;
 }
