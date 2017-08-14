@@ -1,4 +1,7 @@
 #variable	model string lj/cut/softcore/old
+#variable	lambda equal 1
+log		${log}.log
+
 variable	rc equal 10.0
 variable	skin equal 1.0
 variable	Seed equal 6384
@@ -35,25 +38,31 @@ delete_bonds    all angle 1
 delete_bonds    all bond 2
 delete_bonds    all angle 2
 
-pair_modify     pair ${model} alpha 0.5 n 1 p 1 lambda 0.0
-pair_modify	pair ${model} set_grid 16 0.0 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0
+#pair_modify     pair ${model} alpha 0.5 n 1 p 1 lambda ${lambda}
+#pair_modify	pair ${model} set_grid 16 0.0 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0
 
 group		propane type 1 2
 group		water type 3 4
-fix		1 propane rigid/nvt/small molecule temp 300.0 300.0 50.0
-fix		2 water rigid/nvt/small molecule temp 300.0 300.0 50.0
-compute         Esoftcore all softcore/grid 
+fix		1 all rigid/nvt/small molecule temp 300.0 300.0 50.0
+#fix		1 propane rigid/nvt/small molecule temp 300.0 300.0 50.0
+#fix		2 water rigid/nvt/small molecule temp 300.0 300.0 50.0
+#compute         Esoftcore all softcore/grid 
 
 thermo_style	custom step temp pe ke etotal press
 thermo_modify	norm no
 
 #thermo		100
 #run		2000000
-thermo_style	custom step temp pe ke etotal press c_Esoftcore[*]
+#thermo_style	custom step temp pe ke etotal press c_Esoftcore[*]
+thermo_style	custom step temp pe ke etotal press f_1
 
 #run		10000000
 thermo 1
 
-run 10000
+run 1000
+print		"----------------------------------------------------------------------"
+print		"model = ${model}"
+print		"lambda = ${lambda}"
+print		"----------------------------------------------------------------------"
 write_data	water_prod_data
 

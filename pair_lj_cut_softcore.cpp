@@ -579,14 +579,15 @@ void PairLJCutSoftcore::init_style()
     lambda = lambdanode[k];
     etailnode[k] = 0.0;
     for (int i = 1; i <= n; i++)
-      for (int j = i; j <= n; j++) {
-        init_one(i,j);
-        lj3n[i][j][k] = lj3n[j][i][k] = lj3[i][j];
-        lj4n[i][j][k] = lj4n[j][i][k] = lj4[i][j];
-        asqn[i][j][k] = asqn[j][i][k] = asq[i][j];
-        offsetn[i][j][k] = offsetn[j][i][k] = offset[i][j];
-        if (tail_flag) etailnode[k] += (i == j ? 1.0 : 2.0)*etail_ij;
-      }
+      for (int j = i; j <= n; j++)
+        if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
+          init_one(i,j);
+          lj3n[i][j][k] = lj3n[j][i][k] = lj3[i][j];
+          lj4n[i][j][k] = lj4n[j][i][k] = lj4[i][j];
+          asqn[i][j][k] = asqn[j][i][k] = asq[i][j];
+          offsetn[i][j][k] = offsetn[j][i][k] = offset[i][j];
+          if (tail_flag) etailnode[k] += (i == j ? 1.0 : 2.0)*etail_ij;
+        }
   }
   lambda = save;
 }
