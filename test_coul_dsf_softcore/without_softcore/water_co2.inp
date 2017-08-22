@@ -1,0 +1,46 @@
+variable	rc equal 10.0
+variable	skin equal 1.0
+variable	seed equal 6384
+variable	temp equal 300.0
+variable	nevery equal 10
+variable	nfreq equal 10
+
+units		real
+atom_style	full
+
+bond_style	harmonic
+angle_style	harmonic
+pair_style	lj/cut/coul/dsf 0.0 ${rc}
+read_data	water_co2.lmp
+
+timestep 	1
+
+neighbor	${skin} bin
+neigh_modify	delay 0 every 1 check yes
+
+delete_bonds    all bond 1
+delete_bonds    all angle 1
+delete_bonds    all bond 2
+delete_bonds    all angle 2
+
+
+fix		1 all rigid/nvt/small molecule temp 300 300 100
+
+
+thermo_modify	norm no
+
+thermo		50
+
+compute		eatom all pe/atom
+compute		pe all reduce sum c_eatom
+
+compute		vatom all stress/atom thermo_temp virial
+compute		p all reduce sum c_vatom[1] c_vatom[2] c_vatom[3]
+variable	press equal -(c_p[1]+c_p[2]+c_p[3])/(3*vol)
+compute         press all pressure thermo_temp virial
+variable	delta_e equal round(10000*(c_pe-c_thermo_pe))
+variable	delta_p equal round(10000*(c_press-v_press))
+
+thermo_style	custom step temp pe ecoul evdwl #c_E[*] # c_pe v_delta_e c_press v_press v_delta_p 
+
+run		200
