@@ -39,7 +39,8 @@ class PairSoftcore : public Pair {
   int    uptodate;    // 1 if grid was computed in the latest step
   int    gridsize;    // number of nodes in the grid
   double *lambdanode; // lambda value at each node
-  double *evdwlnode;  // total pairwise interaction energy at each node
+  double *evdwlnode;  // total van der Waals potential energy at each node
+  double *ecoulnode;  // total Coulomb potential energy at each node
   double *etailnode;  // tail correction for energy at each node
 
   void allocate();

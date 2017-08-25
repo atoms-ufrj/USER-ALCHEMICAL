@@ -47,6 +47,7 @@ PairSoftcore::~PairSoftcore()
   memory->destroy(lambdanode);
   memory->destroy(evdwlnode);
   memory->destroy(ecoulnode);
+  memory->destroy(ecoulnode);
   memory->destroy(etailnode);
 }
 /* ---------------------------------------------------------------------- */
@@ -73,6 +74,7 @@ void PairSoftcore::allocate()
   memory->create(lambdanode,0,"pair_softcore:lambdanode");
   memory->create(evdwlnode,0,"pair_softcore:evdwlnode");
   memory->create(ecoulnode,0,"pair_softcore:ecoulnode");
+  memory->create(ecoulnode,0,"pair_softcore:ecoulnode");
   memory->create(etailnode,0,"pair_softcore:etailnode");
 }
 
@@ -92,7 +94,8 @@ void PairSoftcore::add_node_to_grid(double lambda_value)
 
   gridsize++;
   memory->grow(lambdanode,gridsize,"pair_softcore:lambdanode");
-  memory->grow(evdwlnode,gridsize,"pair_softcore:evdwlnode"); 
+  memory->grow(evdwlnode,gridsize,"pair_softcore:evdwlnode");
+  memory->grow(ecoulnode,gridsize,"pair_softcore:ecoulnode");
   memory->grow(ecoulnode,gridsize,"pair_softcore:ecoulnode");
   memory->grow(etailnode,gridsize,"pair_softcore:etailnode");
 

@@ -5,7 +5,7 @@
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
-   certain rights in this software.  This software is distributed under
+   certain rights in this software.  This software is distributed under 
    the GNU General Public License.
 
    See the README file in the top-level LAMMPS directory.
@@ -13,26 +13,36 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(lj/cut/coul/dsf/softcore,PairLJCutCoulDSFSoftcore)
+PairStyle(lj/cut/coul/damp/sf/linear,PairLJCutCoulDampSFLinear)
 
 #else
 
-#ifndef LMP_PAIR_LJ_CUT_COUL_DSF_SOFTCORE_H
-#define LMP_PAIR_LJ_CUT_COUL_DSF_SOFTCORE_H
+#ifndef LMP_PAIR_LJ_CUT_COUL_DAMP_SF_LINEAR_H
+#define LMP_PAIR_LJ_CUT_COUL_DAMP_SF_LINEAR_H
 
 #include "pair_softcore.h"
 
+#define EWALD_P   0.3275911
+#define EWALD_F   1.128379167
+#define A1        0.254829592
+#define A2       -0.284496736
+#define A3        1.421413741
+#define A4       -1.453152027
+#define A5        1.061405429
+
 namespace LAMMPS_NS {
 
-class PairLJCutCoulDSFSoftcore : public PairSoftcore {
+class PairLJCutCoulDampSFLinear : public PairSoftcore {
  public:
-  PairLJCutCoulDSFSoftcore(class LAMMPS *);
-  ~PairLJCutCoulDSFSoftcore();
+  PairLJCutCoulDampSFLinear(class LAMMPS *);
+  ~PairLJCutCoulDampSFLinear();
   void compute(int, int);
   void settings(int, char **);
   void coeff(int, char **);
   virtual void init_style();
   virtual double init_one(int, int);
+  void reinit();
+  void modify_params(int, char **);
   void write_restart(FILE *);
   void read_restart(FILE *);
   void write_restart_settings(FILE *);
@@ -45,12 +55,23 @@ class PairLJCutCoulDSFSoftcore : public PairSoftcore {
   double **cut_lj,**cut_ljsq;
   double **epsilon,**sigma;
   double **lj1,**lj2,**lj3,**lj4,**offset;
-
+  
   double cut_coul,cut_coulsq;
   double alpha;
   double f_shift,e_shift;
+  double e_self;
+  int self_flag;
 
   virtual void allocate();
+
+  inline void unshifted( double r, double &v, double &f )
+  {
+    double ar = alpha*r;
+    f = exp(-ar*ar)/r;
+    v = 1.0 / (1.0 + EWALD_P*ar);
+    v *= (A1 + v*(A2 + v*(A3 + v*(A4 + v*A5))))*f;
+    f = v/r + EWALD_F*alpha*f;
+  }
 };
 
 }

@@ -5,22 +5,14 @@
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
-   certain rights in this software.  This software is distributed under
+   certain rights in this software.  This software is distributed under 
    the GNU General Public License.
 
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-/* ----------------------------------------------------------------------
-   Contributing author: Trung Dac Nguyen (ORNL)
-   References: Fennell and Gezelter, JCP 124, 234104 (2006)
-------------------------------------------------------------------------- */
-
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "pair_lj_cut_coul_dsf_softcore.h"
+#include "string.h"
+#include "pair_lj_cut_coul_damp_sf_linear.h"
 #include "atom.h"
 #include "comm.h"
 #include "force.h"
@@ -33,24 +25,17 @@
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
-#define EWALD_F   1.12837917
-#define EWALD_P   0.3275911
-#define A1        0.254829592
-#define A2       -0.284496736
-#define A3        1.421413741
-#define A4       -1.453152027
-#define A5        1.061405429
-
 /* ---------------------------------------------------------------------- */
 
-PairLJCutCoulDSFSoftcore::PairLJCutCoulDSFSoftcore(LAMMPS *lmp) : PairSoftcore(lmp)
+PairLJCutCoulDampSFLinear::PairLJCutCoulDampSFLinear(LAMMPS *lmp) : PairSoftcore(lmp)
 {
-  single_enable = 0;
+  single_enable = 1;
+  self_flag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutCoulDSFSoftcore::~PairLJCutCoulDSFSoftcore()
+PairLJCutCoulDampSFLinear::~PairLJCutCoulDampSFLinear()
 {
   if (!copymode) {
     if (allocated) {
@@ -72,13 +57,14 @@ PairLJCutCoulDSFSoftcore::~PairLJCutCoulDSFSoftcore()
 
 /* ---------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::compute(int eflag, int vflag)
+void PairLJCutCoulDampSFLinear::compute(int eflag, int vflag)
 {
-  int i,j,ii,jj,inum,jnum,itype,jtype;
-  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
-  double r,rsq,r2inv,r6inv,forcecoul,forcelj,factor_coul,factor_lj;
-  double prefactor,erfcc,erfcd,t;
+  int i,j,ii,jj,inum,jnum,itype,jtype,intra;
+  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vr,fr,evdwl,ecoul,fpair;
+  double r,rsq,r2inv,r6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
   int *ilist,*jlist,*numneigh,**firstneigh;
+
+  if (gridflag) for (i = 0; i < gridsize; i++) evdwlnode[i] = ecoulnode[i] = 0.0;
 
   evdwl = ecoul = 0.0;
   if (eflag || vflag) ev_setup(eflag,vflag);
@@ -99,11 +85,16 @@ void PairLJCutCoulDSFSoftcore::compute(int eflag, int vflag)
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
 
+  // Compute self energy:
+  if (eflag && self_flag)
+    for (i = 0; i < nlocal; i++)
+      ev_tally(i,i,nlocal,0,0.0,e_self*q[i]*q[i],0.0,0.0,0.0,0.0);
+
   // loop over neighbors of my atoms
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    qtmp = q[i];
+    qtmp = qqrd2e*q[i];
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -111,15 +102,11 @@ void PairLJCutCoulDSFSoftcore::compute(int eflag, int vflag)
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
-    if (eflag) {
-      double e_self = -(e_shift/2.0 + alpha/MY_PIS) * qtmp*qtmp*qqrd2e;
-      ev_tally(i,i,nlocal,0,0.0,e_self,0.0,0.0,0.0,0.0);
-    }
-
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
-      factor_lj = special_lj[sbmask(j)];
-      factor_coul = special_coul[sbmask(j)];
+      intra = sbmask(j);
+      factor_lj = special_lj[intra];
+      factor_coul = special_coul[intra];
       j &= NEIGHMASK;
 
       delx = xtmp - x[j][0];
@@ -133,21 +120,27 @@ void PairLJCutCoulDSFSoftcore::compute(int eflag, int vflag)
 
         if (rsq < cut_ljsq[itype][jtype]) {
           r6inv = r2inv*r2inv*r2inv;
-          forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
-        } else forcelj = 0.0;
+          forcelj = factor_lj*r6inv*(lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
+        }
+        else
+          forcelj = 0.0;
 
         if (rsq < cut_coulsq) {
-          r = sqrt(rsq);
-          prefactor = lambda*qqrd2e*qtmp*q[j]/r; //Added by Ana
-          erfcd = exp(-alpha*alpha*r*r);
-          t = 1.0 / (1.0 + EWALD_P*alpha*r);
-          erfcc = t * (A1+t*(A2+t*(A3+t*(A4+t*A5)))) * erfcd;
-          forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS * erfcd +
-                                   r*f_shift) * r;
-          if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
-        } else forcecoul = 0.0;
+          prefactor = factor_coul*qtmp*q[j];
+          if (intra) {
+            vr = prefactor*sqrt(r2inv);
+            forcecoul = vr;
+          }
+          else {
+            r = sqrt(rsq);
+            unshifted( r, vr, fr );
+            forcecoul = prefactor*(fr - f_shift)*r;
+          }
+        }
+        else
+          forcecoul = 0.0;
 
-        fpair = (forcecoul + factor_lj*forcelj) * r2inv;
+        fpair = lambda*(forcelj + forcecoul)*r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -158,46 +151,50 @@ void PairLJCutCoulDSFSoftcore::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          if (rsq < cut_ljsq[itype][jtype]) {
-            evdwl = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
+          if (rsq < cut_ljsq[itype][jtype])
+            evdwl = factor_lj*r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
                     offset[itype][jtype];
-            evdwl *= factor_lj;
-          } else evdwl = 0.0;
+          else
+            evdwl = 0.0;
 
-          if (rsq < cut_coulsq) {
-            ecoul = prefactor * (erfcc - r*e_shift - rsq*f_shift);
-            if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
-          } else ecoul = 0.0;
+          if (rsq < cut_coulsq)
+            if (intra)
+              ecoul = lambda*vr;
+            else
+              ecoul = lambda*prefactor*(vr + r*f_shift - e_shift);
+          else
+            ecoul = 0.0;
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
                              evdwl,ecoul,fpair,delx,dely,delz);
 
-        if (gridflag) //Added by Ana
-          prefactor = qqrd2e*qtmp*q[j]/r;
-          for (int k = 0; k < gridsize; k++) {
-           ecoul = prefactor*lambdanode[k] * (erfcc - r*e_shift - rsq*f_shift);
-           if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*lambdanode[k]*prefactor*lambdanode[k];       
-           if (newton_pair || j < nlocal)
-             ecoulnode[k] += ecoul;
-           else
-             ecoulnode[k] += 0.5*ecoul;
-          }
+        if (gridflag && rsq < cut_coulsq) {
+          if (intra)
+            ecoul = vr;
+          else
+            ecoul = prefactor*(vr + r*f_shift - e_shift);
+          for (int k = 0; k < gridsize; k++)
+            if (newton_pair || j < nlocal)
+              ecoulnode[k] += lambdanode[k]*ecoul;
+            else
+              ecoulnode[k] += 0.5*lambdanode[k]*ecoul;
+        }
       }
     }
   }
- 
+
   if (vflag_fdotr) virial_fdotr_compute();
 
-  uptodate = gridflag; //Added by Ana
-  gridflag = 0; //Added by Ana
+  uptodate = gridflag;
+  gridflag = 0;
 }
 
 /* ----------------------------------------------------------------------
    allocate all arrays
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::allocate()
+void PairLJCutCoulDampSFLinear::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
@@ -224,14 +221,17 @@ void PairLJCutCoulDSFSoftcore::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::settings(int narg, char **arg)
+void PairLJCutCoulDampSFLinear::settings(int narg, char **arg)
 {
   if (narg < 2 || narg > 3) error->all(FLERR,"Illegal pair_style command");
 
   alpha = force->numeric(FLERR,arg[0]);
   cut_lj_global = force->numeric(FLERR,arg[1]);
-  if (narg == 2) cut_coul = cut_lj_global;
-  else cut_coul = force->numeric(FLERR,arg[2]);
+
+  if (narg == 2)
+    cut_coul = cut_lj_global;
+  else
+    cut_coul = force->numeric(FLERR,arg[2]);
 
   // reset cutoffs that have been explicitly set
 
@@ -248,9 +248,9 @@ void PairLJCutCoulDSFSoftcore::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::coeff(int narg, char **arg)
+void PairLJCutCoulDampSFLinear::coeff(int narg, char **arg)
 {
-  if (narg < 4 || narg > 5)
+  if (narg < 4 || narg > 5) 
     error->all(FLERR,"Incorrect args for pair coefficients");
   if (!allocated) allocate();
 
@@ -282,29 +282,34 @@ void PairLJCutCoulDSFSoftcore::coeff(int narg, char **arg)
    init specific to this pair style
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::init_style()
+void PairLJCutCoulDampSFLinear::init_style()
 {
   if (!atom->q_flag)
-    error->all(FLERR,"Pair style lj/cut/coul/dsf requires atom attribute q");
+    error->all(FLERR,"Pair style lj/cut/coul/dsf requires atom charges");
 
   neighbor->request(this,instance_me);
 
+  PairSoftcore::init_style();
+
   cut_coulsq = cut_coul * cut_coul;
-  double erfcc = erfc(alpha*cut_coul);
-  double erfcd = exp(-alpha*alpha*cut_coul*cut_coul);
-  f_shift = -(erfcc/cut_coulsq + 2.0/MY_PIS*alpha*erfcd/cut_coul);
-  e_shift = erfcc/cut_coul - f_shift*cut_coul;
+  unshifted( cut_coul, e_shift, f_shift );
+  e_shift += f_shift*cut_coul;
+  reinit();
+}
 
-  PairSoftcore::init_style(); //Added by Ana
+/* ---------------------------------------------------------------------- */
 
+void PairLJCutCoulDampSFLinear::reinit()
+{
+  e_self = -lambda*(e_shift/2.0 + alpha/sqrt(MY_PI))*force->qqrd2e;
 }
 
 /* ----------------------------------------------------------------------
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairLJCutCoulDSFSoftcore::init_one(int i, int j)
-{   
+double PairLJCutCoulDampSFLinear::init_one(int i, int j)
+{
   if (setflag[i][j] == 0) {
     epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],
                                sigma[i][i],sigma[j][j]);
@@ -314,17 +319,17 @@ double PairLJCutCoulDSFSoftcore::init_one(int i, int j)
 
   double cut = MAX(cut_lj[i][j],cut_coul);
   cut_ljsq[i][j] = cut_lj[i][j] * cut_lj[i][j];
-
+  
   lj1[i][j] = 48.0 * epsilon[i][j] * pow(sigma[i][j],12.0);
   lj2[i][j] = 24.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
   lj3[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],12.0);
   lj4[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
-
-  if (offset_flag && (cut_lj[i][j] > 0.0)) {
+     
+  if (offset_flag) {
     double ratio = sigma[i][j] / cut_lj[i][j];
     offset[i][j] = 4.0 * epsilon[i][j] * (pow(ratio,12.0) - pow(ratio,6.0));
   } else offset[i][j] = 0.0;
-
+  
   cut_ljsq[j][i] = cut_ljsq[i][j];
   lj1[j][i] = lj1[i][j];
   lj2[j][i] = lj2[i][j];
@@ -352,20 +357,54 @@ double PairLJCutCoulDSFSoftcore::init_one(int i, int j)
     double rc3 = cut_lj[i][j]*cut_lj[i][j]*cut_lj[i][j];
     double rc6 = rc3*rc3;
     double rc9 = rc3*rc6;
-    etail_ij = 8.0*MY_PI*all[0]*all[1]*epsilon[i][j] *
-               sig6 * (sig6 - 3.0*rc6) / (9.0*rc9);
-    ptail_ij = 16.0*MY_PI*all[0]*all[1]*epsilon[i][j] *
-               sig6 * (2.0*sig6 - 3.0*rc6) / (9.0*rc9);
-  }
+    etail_ij = 8.0*MY_PI*all[0]*all[1]*epsilon[i][j] * 
+               sig6 * (sig6 - 3.0*rc6) / (9.0*rc9); 
+    ptail_ij = 16.0*MY_PI*all[0]*all[1]*epsilon[i][j] * 
+               sig6 * (2.0*sig6 - 3.0*rc6) / (9.0*rc9); 
+  } 
 
   return cut;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJCutCoulDampSFLinear::modify_params(int narg, char **arg)
+{
+  if (narg == 0)
+    error->all(FLERR,"Illegal pair_modify command");
+
+  int iarg, ns, skip[narg];
+  iarg = ns = 0;
+  while (iarg < narg) {
+    if (strcmp(arg[iarg],"self") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal pair_modify command");
+      if (strcmp(arg[iarg+1],"yes") == 0)
+        self_flag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0)
+        self_flag = 0;
+      else
+        error->all(FLERR,"Illegal pair_modify command");
+      single_enable = !self_flag;
+      iarg += 2;
+    }
+    else // no keyword found - skip argument:
+      skip[ns++] = iarg++;
+  }
+
+  // Call parent-class routine with skipped arguments:
+  if (ns > 0) {
+    for (int i = 0; i < ns; i++)
+      arg[i] = arg[skip[i]];
+    PairSoftcore::modify_params(ns, arg);
+  }
 }
 
 /* ----------------------------------------------------------------------
   proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::write_restart(FILE *fp)
+void PairLJCutCoulDampSFLinear::write_restart(FILE *fp)
 {
   write_restart_settings(fp);
 
@@ -377,7 +416,7 @@ void PairLJCutCoulDSFSoftcore::write_restart(FILE *fp)
         fwrite(&epsilon[i][j],sizeof(double),1,fp);
         fwrite(&sigma[i][j],sizeof(double),1,fp);
         fwrite(&cut_lj[i][j],sizeof(double),1,fp);
-	    }
+      }
     }
 }
 
@@ -385,7 +424,7 @@ void PairLJCutCoulDSFSoftcore::write_restart(FILE *fp)
   proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::read_restart(FILE *fp)
+void PairLJCutCoulDampSFLinear::read_restart(FILE *fp)
 {
   read_restart_settings(fp);
   allocate();
@@ -413,7 +452,7 @@ void PairLJCutCoulDSFSoftcore::read_restart(FILE *fp)
   proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::write_restart_settings(FILE *fp)
+void PairLJCutCoulDampSFLinear::write_restart_settings(FILE *fp)
 {
   fwrite(&alpha,sizeof(double),1,fp);
   fwrite(&cut_lj_global,sizeof(double),1,fp);
@@ -421,13 +460,14 @@ void PairLJCutCoulDSFSoftcore::write_restart_settings(FILE *fp)
   fwrite(&offset_flag,sizeof(int),1,fp);
   fwrite(&mix_flag,sizeof(int),1,fp);
   fwrite(&tail_flag,sizeof(int),1,fp);
+  fwrite(&self_flag,sizeof(int),1,fp);
 }
 
 /* ----------------------------------------------------------------------
   proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairLJCutCoulDSFSoftcore::read_restart_settings(FILE *fp)
+void PairLJCutCoulDampSFLinear::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
     fread(&alpha,sizeof(double),1,fp);
@@ -436,6 +476,7 @@ void PairLJCutCoulDSFSoftcore::read_restart_settings(FILE *fp)
     fread(&offset_flag,sizeof(int),1,fp);
     fread(&mix_flag,sizeof(int),1,fp);
     fread(&tail_flag,sizeof(int),1,fp);
+    fread(&self_flag,sizeof(int),1,fp);
   }
   MPI_Bcast(&alpha,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&cut_lj_global,1,MPI_DOUBLE,0,world);
@@ -443,52 +484,44 @@ void PairLJCutCoulDSFSoftcore::read_restart_settings(FILE *fp)
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
   MPI_Bcast(&mix_flag,1,MPI_INT,0,world);
   MPI_Bcast(&tail_flag,1,MPI_INT,0,world);
+  MPI_Bcast(&self_flag,1,MPI_INT,0,world);
 }
 
 /* ---------------------------------------------------------------------- */
 
-double PairLJCutCoulDSFSoftcore::single(int i, int j, int itype, int jtype, double rsq,
+double PairLJCutCoulDampSFLinear::single(int i, int j, int itype, int jtype, double rsq,
                                 double factor_coul, double factor_lj,
                                 double &fforce)
 {
-  double r2inv,r6inv,r,erfcc,erfcd,prefactor;
-  double forcecoul,forcelj,phicoul,philj;
+  double r2inv,r6inv,r,vr,fr,prefactor;
 
   r2inv = 1.0/rsq;
+  fforce = 0.0;
   if (rsq < cut_ljsq[itype][jtype]) {
     r6inv = r2inv*r2inv*r2inv;
-    forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
-  } else forcelj = 0.0;
-
+    fforce += factor_lj*r6inv*(lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
+  }
   if (rsq < cut_coulsq) {
     r = sqrt(rsq);
-    prefactor = lambda*factor_coul * force->qqrd2e * atom->q[i]*atom->q[j]/r; //Added by Ana
-    erfcc = erfc(alpha*r);
-    erfcd = exp(-alpha*alpha*r*r);
-    forcecoul = prefactor * (erfcc/r + 2.0*alpha/MY_PIS * erfcd +
-      r*f_shift) * r;
-  } else forcecoul = 0.0;
-
-  fforce = (forcecoul + factor_lj*forcelj) * r2inv;
+    unshifted( r, vr, fr );
+    prefactor = factor_coul * force->qqrd2e * atom->q[i] * atom->q[j];
+    fforce += prefactor*(fr-f_shift)*r;
+  }
+  fforce *= r2inv;
 
   double eng = 0.0;
-  if (rsq < cut_ljsq[itype][jtype]) {
-    philj = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
-      offset[itype][jtype];
-    eng += factor_lj*philj;
-  }
-
-  if (rsq < cut_coulsq) {
-    phicoul = prefactor * (erfcc - r*e_shift - rsq*f_shift);
-    eng += phicoul;
-  }
-
+  if (rsq < cut_ljsq[itype][jtype])
+    eng += factor_lj*r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
+           offset[itype][jtype];
+  if (rsq < cut_coulsq)
+    eng += prefactor * (vr + r*f_shift - e_shift);
+ 
   return eng;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void *PairLJCutCoulDSFSoftcore::extract(const char *str, int &dim)
+void *PairLJCutCoulDampSFLinear::extract(const char *str, int &dim)
 {
   if (strcmp(str,"cut_coul") == 0) {
     dim = 0;
@@ -496,3 +529,4 @@ void *PairLJCutCoulDSFSoftcore::extract(const char *str, int &dim)
   }
   return NULL;
 }
+
