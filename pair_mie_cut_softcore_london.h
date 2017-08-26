@@ -20,11 +20,11 @@ PairStyle(mie/cut/softcore/london,PairMieCutSoftcoreLondon)
 #ifndef LMP_PAIR_MIE_CUT_SOFTCORELONDON_H
 #define LMP_PAIR_MIE_CUT_SOFTCORELONDON_H
 
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 
 namespace LAMMPS_NS {
 
-class PairMieCutSoftcoreLondon : public PairSoftcore {
+class PairMieCutSoftcoreLondon : public PairAlchemical {
  public:
   PairMieCutSoftcoreLondon(class LAMMPS *);
   virtual ~PairMieCutSoftcoreLondon();

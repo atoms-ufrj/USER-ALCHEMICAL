@@ -20,11 +20,11 @@ PairStyle(lj/cut/softcore/old,PairLJCutSoftcoreOld)
 #ifndef LMP_PAIR_LJ_CUT_SOFTCORE_OLD_H
 #define LMP_PAIR_LJ_CUT_SOFTCORE_OLD_H
 
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 
 namespace LAMMPS_NS {
 
-class PairLJCutSoftcoreOld : public PairSoftcore {
+class PairLJCutSoftcoreOld : public PairAlchemical {
  friend class EESoftcore;
  public:
   PairLJCutSoftcoreOld(class LAMMPS *);

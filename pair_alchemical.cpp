@@ -18,7 +18,7 @@
 ------------------------------------------------------------------------- */
 
 #include "string.h"
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 #include "memory.h"
 #include "error.h"
 #include "force.h"
@@ -27,7 +27,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-PairSoftcore::PairSoftcore(LAMMPS *lmp) : Pair(lmp)
+PairAlchemical::PairAlchemical(LAMMPS *lmp) : Pair(lmp)
 {
   alpha = 0.5;
   exponent_n = 1.0;
@@ -42,7 +42,7 @@ PairSoftcore::PairSoftcore(LAMMPS *lmp) : Pair(lmp)
 
 /* ---------------------------------------------------------------------- */
 
-PairSoftcore::~PairSoftcore()
+PairAlchemical::~PairAlchemical()
 {
   memory->destroy(lambdanode);
   memory->destroy(evdwlnode);
@@ -52,7 +52,7 @@ PairSoftcore::~PairSoftcore()
 }
 /* ---------------------------------------------------------------------- */
 
-void PairSoftcore::init_style()
+void PairAlchemical::init_style()
 {
   // print grid information:
   if ( (gridsize > 0) && (comm->me == 0) ) {
@@ -69,7 +69,7 @@ void PairSoftcore::init_style()
 
 /* ---------------------------------------------------------------------- */
 
-void PairSoftcore::allocate()
+void PairAlchemical::allocate()
 {
   memory->create(lambdanode,0,"pair_softcore:lambdanode");
   memory->create(evdwlnode,0,"pair_softcore:evdwlnode");
@@ -82,7 +82,7 @@ void PairSoftcore::allocate()
    adds a new node to the lambda grid, in increasing order of lambdas
 ------------------------------------------------------------------------- */
 
-void PairSoftcore::add_node_to_grid(double lambda_value)
+void PairAlchemical::add_node_to_grid(double lambda_value)
 {
   int i,j;
 
@@ -112,7 +112,7 @@ void PairSoftcore::add_node_to_grid(double lambda_value)
 
 /* ---------------------------------------------------------------------- */
 
-void PairSoftcore::modify_params(int narg, char **arg)
+void PairAlchemical::modify_params(int narg, char **arg)
 {
   if (narg == 0)
     error->all(FLERR,"Illegal pair_modify command");
@@ -181,7 +181,7 @@ void PairSoftcore::modify_params(int narg, char **arg)
 
 /* ---------------------------------------------------------------------- */
 
-void PairSoftcore::write_restart(FILE *fp)
+void PairAlchemical::write_restart(FILE *fp)
 {
   fwrite(&gridsize,sizeof(int),1,fp);
   fwrite(lambdanode,sizeof(double),gridsize,fp);
@@ -189,7 +189,7 @@ void PairSoftcore::write_restart(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-void PairSoftcore::read_restart(FILE *fp)
+void PairAlchemical::read_restart(FILE *fp)
 {
   if (comm->me == 0) fread(&gridsize,sizeof(int),1,fp);
   MPI_Bcast(&gridsize,1,MPI_INT,0,world);

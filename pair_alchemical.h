@@ -13,20 +13,20 @@
 
 #ifndef PAIR_CLASS
 
-#ifndef LMP_PAIR_SOFTCORE_H
-#define LMP_PAIR_SOFTCORE_H
+#ifndef LMP_PAIR_ALCHEMICAL_H
+#define LMP_PAIR_ALCHEMICAL_H
 
 #include "pair.h"
 
 namespace LAMMPS_NS {
 
-class PairSoftcore : public Pair {
+class PairAlchemical : public Pair {
  friend class FixSoftcoreEE;
  friend class ComputeSoftcoreGrid;
 
  public:
-  PairSoftcore(class LAMMPS *);
-  virtual ~PairSoftcore();
+  PairAlchemical(class LAMMPS *);
+  virtual ~PairAlchemical();
   void init_style();
   void modify_params(int narg, char **arg);
   void write_restart(FILE *);

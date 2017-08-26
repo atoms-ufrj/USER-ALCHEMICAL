@@ -27,7 +27,7 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutCoulDampSFLinear::PairLJCutCoulDampSFLinear(LAMMPS *lmp) : PairSoftcore(lmp)
+PairLJCutCoulDampSFLinear::PairLJCutCoulDampSFLinear(LAMMPS *lmp) : PairAlchemical(lmp)
 {
   single_enable = 1;
   self_flag = 0;
@@ -285,7 +285,7 @@ void PairLJCutCoulDampSFLinear::init_style()
 
   neighbor->request(this,instance_me);
 
-  PairSoftcore::init_style();
+  PairAlchemical::init_style();
 
   cut_coulsq = cut_coul * cut_coul;
   unshifted( cut_coul, e_shift, f_shift );
@@ -392,7 +392,7 @@ void PairLJCutCoulDampSFLinear::modify_params(int narg, char **arg)
   if (ns > 0) {
     for (int i = 0; i < ns; i++)
       arg[i] = arg[skip[i]];
-    PairSoftcore::modify_params(ns, arg);
+    PairAlchemical::modify_params(ns, arg);
   }
 }
 

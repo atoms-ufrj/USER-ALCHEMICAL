@@ -20,7 +20,7 @@
 #include "mpi.h"
 #include "compute_softcore_grid.h"
 #include "pair_hybrid_softcore.h"
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 #include "force.h"
 #include "domain.h"
 #include "error.h"
@@ -44,17 +44,17 @@ ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) :
   // Retrieve all lambda-related pair styles:
   PairHybridSoftcore *hybrid = dynamic_cast<PairHybridSoftcore*>(force->pair);
   if (hybrid) {
-    pair = new class PairSoftcore*[hybrid->nstyles];
+    pair = new class PairAlchemical*[hybrid->nstyles];
     npairs = 0;
     for (int i = 0; i < hybrid->nstyles; i++)
-      if (pair[npairs] = dynamic_cast<class PairSoftcore*>(hybrid->styles[i]))
+      if (pair[npairs] = dynamic_cast<class PairAlchemical*>(hybrid->styles[i]))
         npairs++;
     if (npairs == 0)
       error->all(FLERR,"Compute softcore/grid requires a softcore-type pair style");
   }
   else {
-    pair = new class PairSoftcore*[1];
-    if (!(pair[0] = dynamic_cast<class PairSoftcore*>(force->pair)))
+    pair = new class PairAlchemical*[1];
+    if (!(pair[0] = dynamic_cast<class PairAlchemical*>(force->pair)))
       error->all(FLERR,"Compute softcore/grid requires a softcore-type pair style");
   }
 

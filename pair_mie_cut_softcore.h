@@ -20,11 +20,11 @@ PairStyle(mie/cut/softcore,PairMieCutSoftcore)
 #ifndef LMP_PAIR_MIE_CUT_SOFTCORE_H
 #define LMP_PAIR_MIE_CUT_SOFTCORE_H
 
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 
 namespace LAMMPS_NS {
 
-class PairMieCutSoftcore : public PairSoftcore {
+class PairMieCutSoftcore : public PairAlchemical {
  public:
   PairMieCutSoftcore(class LAMMPS *);
   virtual ~PairMieCutSoftcore();

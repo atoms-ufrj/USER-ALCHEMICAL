@@ -86,10 +86,10 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"fix softcore/ee: use of pair style hybrid/softcore is mandatory");
 
   // Look for lambda-related pair styles:
-  pair = new class PairSoftcore*[hybrid->nstyles];
+  pair = new class PairAlchemical*[hybrid->nstyles];
   npairs = 0;
   for (int i = 0; i < hybrid->nstyles; i++) {
-    pair[npairs] = dynamic_cast<class PairSoftcore*>(hybrid->styles[i]);
+    pair[npairs] = dynamic_cast<class PairAlchemical*>(hybrid->styles[i]);
     if (pair[npairs])
       npairs++;
   }
@@ -225,7 +225,7 @@ void FixSoftcoreEE::initial_integrate(int vflag)
 
     // Compute and add pair interactions using the new lambda value:
     for (int i = 0; i < npairs; i++) {
-      class PairSoftcore *ipair = pair[i];
+      class PairAlchemical *ipair = pair[i];
       ipair->gridflag = 0;
       ipair->compute(this->eflag,this->vflag);
       ipair->uptodate = 1;
@@ -335,7 +335,7 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
     atom->f[i][2] += f_soft[i][2];
   }
   for (int i = 0; i < npairs; i++) {
-    class PairSoftcore *ipair = pair[i];
+    class PairAlchemical *ipair = pair[i];
     if (ipair->eflag_global) {
       hybrid->eng_vdwl += ipair->eng_vdwl;
       hybrid->eng_coul += ipair->eng_coul;

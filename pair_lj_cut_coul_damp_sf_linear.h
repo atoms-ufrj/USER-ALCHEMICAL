@@ -20,7 +20,7 @@ PairStyle(lj/cut/coul/damp/sf/linear,PairLJCutCoulDampSFLinear)
 #ifndef LMP_PAIR_LJ_CUT_COUL_DAMP_SF_LINEAR_H
 #define LMP_PAIR_LJ_CUT_COUL_DAMP_SF_LINEAR_H
 
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 
 #define EWALD_P   0.3275911
 #define EWALD_F   1.128379167
@@ -32,7 +32,7 @@ PairStyle(lj/cut/coul/damp/sf/linear,PairLJCutCoulDampSFLinear)
 
 namespace LAMMPS_NS {
 
-class PairLJCutCoulDampSFLinear : public PairSoftcore {
+class PairLJCutCoulDampSFLinear : public PairAlchemical {
  public:
   PairLJCutCoulDampSFLinear(class LAMMPS *);
   ~PairLJCutCoulDampSFLinear();

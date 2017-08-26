@@ -40,7 +40,7 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutSoftcoreOld::PairLJCutSoftcoreOld(LAMMPS *lmp) : PairSoftcore(lmp)
+PairLJCutSoftcoreOld::PairLJCutSoftcoreOld(LAMMPS *lmp) : PairAlchemical(lmp)
 {
   respa_enable = 1;
 

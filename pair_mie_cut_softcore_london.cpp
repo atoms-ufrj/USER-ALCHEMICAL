@@ -46,7 +46,7 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-PairMieCutSoftcoreLondon::PairMieCutSoftcoreLondon(LAMMPS *lmp) : PairSoftcore(lmp)
+PairMieCutSoftcoreLondon::PairMieCutSoftcoreLondon(LAMMPS *lmp) : PairAlchemical(lmp)
 {
   respa_enable = 1;
   writedata = 1;
@@ -585,7 +585,7 @@ void PairMieCutSoftcoreLondon::init_style()
     cut_respa = ((Respa *) update->integrate)->cutoff;
   else cut_respa = NULL;
 
-  PairSoftcore::init_style();
+  PairAlchemical::init_style();
 
   int n = atom->ntypes;
   memory->grow(mie1n,n+1,n+1,gridsize,"pair:mie1n");
@@ -691,7 +691,7 @@ double PairMieCutSoftcoreLondon::init_one(int i, int j)
 
 void PairMieCutSoftcoreLondon::write_restart(FILE *fp)
 {
-  PairSoftcore::write_restart(fp);
+  PairAlchemical::write_restart(fp);
   write_restart_settings(fp);
 
   int i,j;
@@ -713,7 +713,7 @@ void PairMieCutSoftcoreLondon::write_restart(FILE *fp)
 
 void PairMieCutSoftcoreLondon::read_restart(FILE *fp)
 {
-  PairSoftcore::read_restart(fp);
+  PairAlchemical::read_restart(fp);
   read_restart_settings(fp);
   allocate();
 

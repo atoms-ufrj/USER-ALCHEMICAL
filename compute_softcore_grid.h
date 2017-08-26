@@ -21,7 +21,7 @@ ComputeStyle(softcore/grid,ComputeSoftcoreGrid)
 #define LMP_COMPUTE_SOFTCORE_GRID_H
 
 #include "compute.h"
-#include "pair_softcore.h"
+#include "pair_alchemical.h"
 
 namespace LAMMPS_NS {
 
@@ -34,7 +34,7 @@ class ComputeSoftcoreGrid : public Compute {
 
  private:
   int npairs;
-  class PairSoftcore **pair;
+  class PairAlchemical **pair;
 
   int nmax;
   double **f;
