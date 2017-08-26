@@ -159,21 +159,17 @@ void PairLJCutCoulDampSFLinear::compute(int eflag, int vflag)
 
           if (rsq < cut_coulsq)
             if (intra)
-              ecoul = lambda*vr;
+              ecoul = vr;
             else
-              ecoul = lambda*prefactor*(vr + r*f_shift - e_shift);
+              ecoul = prefactor*(vr + r*f_shift - e_shift);
           else
             ecoul = 0.0;
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             evdwl,ecoul,fpair,delx,dely,delz);
+                             evdwl,lambda*ecoul,fpair,delx,dely,delz);
 
         if (gridflag && rsq < cut_coulsq) {
-          if (intra)
-            ecoul = vr;
-          else
-            ecoul = prefactor*(vr + r*f_shift - e_shift);
           for (int k = 0; k < gridsize; k++)
             if (newton_pair || j < nlocal)
               ecoulnode[k] += lambdanode[k]*ecoul;
