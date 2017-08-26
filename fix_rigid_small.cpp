@@ -719,127 +719,51 @@ void FixRigidSmall::initial_integrate(int vflag)
      which are added in when one calculates a new fcm/torque
 ------------------------------------------------------------------------- */
 
-void FixRigidSmall::post_force(int vflag)
+void FixRigidSmall::apply_langevin_thermostat()
 {
+  double gamma1,gamma2;
 
-  double **x = atom->x;
-  double **f = atom->f;
-  int nlocal = atom->nlocal;
+  // grow langextra if needed
 
-  double dx,dy,dz;
-  double unwrap[3];
-  double *xcm,*fcm,*tcm;
-
-  // sum over atoms to get force and torque on rigid body
-
-  for (int ibody = 0; ibody < nlocal_body+nghost_body; ibody++) {
-    fcm = body[ibody].fcm;
-    fcm[0] = fcm[1] = fcm[2] = 0.0;
-    tcm = body[ibody].torque;
-    tcm[0] = tcm[1] = tcm[2] = 0.0;
+  if (nlocal_body > maxlang) {
+    memory->destroy(langextra);
+    maxlang = nlocal_body + nghost_body;
+    memory->create(langextra,maxlang,6,"rigid/small:langextra");
   }
 
-  for (int i = 0; i < nlocal; i++) {
-    if (atom2body[i] < 0) continue;
-    Body *b = &body[atom2body[i]];
+  double delta = update->ntimestep - update->beginstep;
+  delta /= update->endstep - update->beginstep;
+  double t_target = t_start + delta * (t_stop-t_start);
+  double tsqrt = sqrt(t_target);
 
-    fcm = b->fcm;
-    fcm[0] += f[i][0];
-    fcm[1] += f[i][1];
-    fcm[2] += f[i][2];
+  double boltz = force->boltz;
+  double dt = update->dt;
+  double mvv2e = force->mvv2e;
+  double ftm2v = force->ftm2v;
 
-    domain->unmap(x[i],xcmimage[i],unwrap);
-    xcm = b->xcm;
-    dx = unwrap[0] - xcm[0];
-    dy = unwrap[1] - xcm[1];
-    dz = unwrap[2] - xcm[2];
+  double *vcm,*omega,*inertia;
 
-    tcm = b->torque;
-    tcm[0] += dy*f[i][2] - dz*f[i][1];
-    tcm[1] += dz*f[i][0] - dx*f[i][2];
-    tcm[2] += dx*f[i][1] - dy*f[i][0];
+  for (int ibody = 0; ibody < nlocal_body; ibody++) {
+    vcm = body[ibody].vcm;
+    omega = body[ibody].omega;
+    inertia = body[ibody].inertia;
+    
+    gamma1 = -body[ibody].mass / t_period / ftm2v;
+    gamma2 = sqrt(body[ibody].mass) * tsqrt *
+      sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
+    langextra[ibody][0] = gamma1*vcm[0] + gamma2*(random->uniform()-0.5);
+    langextra[ibody][1] = gamma1*vcm[1] + gamma2*(random->uniform()-0.5);
+    langextra[ibody][2] = gamma1*vcm[2] + gamma2*(random->uniform()-0.5);
+    
+    gamma1 = -1.0 / t_period / ftm2v;
+    gamma2 = tsqrt * sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
+    langextra[ibody][3] = inertia[0]*gamma1*omega[0] +
+      sqrt(inertia[0])*gamma2*(random->uniform()-0.5);
+    langextra[ibody][4] = inertia[1]*gamma1*omega[1] +
+      sqrt(inertia[1])*gamma2*(random->uniform()-0.5);
+    langextra[ibody][5] = inertia[2]*gamma1*omega[2] +
+      sqrt(inertia[2])*gamma2*(random->uniform()-0.5);
   }
-
-  // extended particles add their torque to torque of body
-
-  if (extended) {
-    double **torque = atom->torque;
-
-    for (int i = 0; i < nlocal; i++) {
-      if (atom2body[i] < 0) continue;
-
-      if (eflags[i] & TORQUE) {
-        tcm = body[atom2body[i]].torque;
-        tcm[0] += torque[i][0];
-        tcm[1] += torque[i][1];
-        tcm[2] += torque[i][2];
-      }
-    }
-  }
-
-  // reverse communicate fcm, torque of all bodies
-
-  commflag = FORCE_TORQUE;
-  comm->reverse_comm_fix(this,6);
-
-  // include Langevin thermostat forces and torques
-
-  if (langflag) {
-
-    double gamma1,gamma2;
-
-    // grow langextra if needed
-
-    if (nlocal_body > maxlang) {
-      memory->destroy(langextra);
-      maxlang = nlocal_body + nghost_body;
-      memory->create(langextra,maxlang,6,"rigid/small:langextra");
-    }
-
-    double delta = update->ntimestep - update->beginstep;
-    delta /= update->endstep - update->beginstep;
-    double t_target = t_start + delta * (t_stop-t_start);
-    double tsqrt = sqrt(t_target);
-
-    double boltz = force->boltz;
-    double dt = update->dt;
-    double mvv2e = force->mvv2e;
-    double ftm2v = force->ftm2v;
-
-    double *vcm,*omega,*inertia;
-
-    for (int ibody = 0; ibody < nlocal_body; ibody++) {
-      vcm = body[ibody].vcm;
-      omega = body[ibody].omega;
-      inertia = body[ibody].inertia;
-
-      gamma1 = -body[ibody].mass / t_period / ftm2v;
-      gamma2 = sqrt(body[ibody].mass) * tsqrt *
-        sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
-      langextra[ibody][0] = gamma1*vcm[0] + gamma2*(random->uniform()-0.5);
-      langextra[ibody][1] = gamma1*vcm[1] + gamma2*(random->uniform()-0.5);
-      langextra[ibody][2] = gamma1*vcm[2] + gamma2*(random->uniform()-0.5);
-
-      gamma1 = -1.0 / t_period / ftm2v;
-      gamma2 = tsqrt * sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
-      langextra[ibody][3] = inertia[0]*gamma1*omega[0] +
-        sqrt(inertia[0])*gamma2*(random->uniform()-0.5);
-      langextra[ibody][4] = inertia[1]*gamma1*omega[1] +
-        sqrt(inertia[1])*gamma2*(random->uniform()-0.5);
-      langextra[ibody][5] = inertia[2]*gamma1*omega[2] +
-        sqrt(inertia[2])*gamma2*(random->uniform()-0.5);
-
-      fcm = body[ibody].fcm;
-      fcm[0] += langextra[ibody][0];
-      fcm[1] += langextra[ibody][1];
-      fcm[2] += langextra[ibody][2];
-      tcm = body[ibody].torque;
-      tcm[0] += langextra[ibody][3];
-      tcm[1] += langextra[ibody][4];
-      tcm[2] += langextra[ibody][5];
-    }
-  }
-
 }
 
 /* ----------------------------------------------------------------------
@@ -868,6 +792,98 @@ void FixRigidSmall::enforce2d()
       langextra[ibody][4] = 0.0;
     }
   }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixRigidSmall::compute_forces_and_torques()
+{
+  int i,ibody;
+
+  //check(3);
+
+  // sum over atoms to get force and torque on rigid body
+
+  double **x = atom->x;
+  double **f = atom->f;
+  int nlocal = atom->nlocal;
+
+  double dx,dy,dz;
+  double unwrap[3];
+  double *xcm,*fcm,*tcm;
+
+  for (ibody = 0; ibody < nlocal_body+nghost_body; ibody++) {
+    fcm = body[ibody].fcm;
+    fcm[0] = fcm[1] = fcm[2] = 0.0;
+    tcm = body[ibody].torque;
+    tcm[0] = tcm[1] = tcm[2] = 0.0;
+  }
+
+  for (i = 0; i < nlocal; i++) {
+    if (atom2body[i] < 0) continue;
+    Body *b = &body[atom2body[i]];
+
+    fcm = b->fcm;
+    fcm[0] += f[i][0];
+    fcm[1] += f[i][1];
+    fcm[2] += f[i][2];
+
+    domain->unmap(x[i],xcmimage[i],unwrap);
+    xcm = b->xcm;
+    dx = unwrap[0] - xcm[0];
+    dy = unwrap[1] - xcm[1];
+    dz = unwrap[2] - xcm[2];
+
+    tcm = b->torque;
+    tcm[0] += dy*f[i][2] - dz*f[i][1];
+    tcm[1] += dz*f[i][0] - dx*f[i][2];
+    tcm[2] += dx*f[i][1] - dy*f[i][0];
+  }
+
+  // extended particles add their torque to torque of body
+
+  if (extended) {
+    double **torque = atom->torque;
+
+    for (i = 0; i < nlocal; i++) {
+      if (atom2body[i] < 0) continue;
+
+      if (eflags[i] & TORQUE) {
+        tcm = body[atom2body[i]].torque;
+        tcm[0] += torque[i][0];
+        tcm[1] += torque[i][1];
+        tcm[2] += torque[i][2];
+      }
+    }
+  }
+
+  // reverse communicate fcm, torque of all bodies
+
+  commflag = FORCE_TORQUE;
+  comm->reverse_comm_fix(this,6);
+
+  // include Langevin thermostat forces and torques
+
+  if (langflag) {
+    for (int ibody = 0; ibody < nlocal_body; ibody++) {
+      fcm = body[ibody].fcm;
+      fcm[0] += langextra[ibody][0];
+      fcm[1] += langextra[ibody][1];
+      fcm[2] += langextra[ibody][2];
+      tcm = body[ibody].torque;
+      tcm[0] += langextra[ibody][3];
+      tcm[1] += langextra[ibody][4];
+      tcm[2] += langextra[ibody][5];
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixRigidSmall::post_force(int vflag)
+{
+  if (langflag) apply_langevin_thermostat();
+  compute_forces_and_torques();
 }
 
 /* ---------------------------------------------------------------------- */

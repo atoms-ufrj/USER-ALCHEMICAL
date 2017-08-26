@@ -892,10 +892,74 @@ void FixRigid::initial_integrate(int vflag)
    apply Langevin thermostat to all 6 DOF of rigid bodies
    computed by proc 0, broadcast to other procs
    unlike fix langevin, this stores extra force in extra arrays,
-     which are added in when final_integrate() calculates a new fcm/torque
+     which are added in when one calculates a new fcm/torque
 ------------------------------------------------------------------------- */
 
-void FixRigid::post_force(int vflag)
+void FixRigid::apply_langevin_thermostat()
+{
+  if (me == 0) {
+    double gamma1,gamma2;
+
+    double delta = update->ntimestep - update->beginstep;
+    if (delta != 0.0) delta /= update->endstep - update->beginstep;
+    t_target = t_start + delta * (t_stop-t_start);
+    double tsqrt = sqrt(t_target);
+
+    double boltz = force->boltz;
+    double dt = update->dt;
+    double mvv2e = force->mvv2e;
+    double ftm2v = force->ftm2v;
+
+    for (int i = 0; i < nbody; i++) {
+      gamma1 = -masstotal[i] / t_period / ftm2v;
+      gamma2 = sqrt(masstotal[i]) * tsqrt *
+        sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
+      langextra[i][0] = gamma1*vcm[i][0] + gamma2*(random->uniform()-0.5);
+      langextra[i][1] = gamma1*vcm[i][1] + gamma2*(random->uniform()-0.5);
+      langextra[i][2] = gamma1*vcm[i][2] + gamma2*(random->uniform()-0.5);
+      
+      gamma1 = -1.0 / t_period / ftm2v;
+      gamma2 = tsqrt * sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
+      langextra[i][3] = inertia[i][0]*gamma1*omega[i][0] +
+        sqrt(inertia[i][0])*gamma2*(random->uniform()-0.5);
+      langextra[i][4] = inertia[i][1]*gamma1*omega[i][1] +
+        sqrt(inertia[i][1])*gamma2*(random->uniform()-0.5);
+      langextra[i][5] = inertia[i][2]*gamma1*omega[i][2] +
+        sqrt(inertia[i][2])*gamma2*(random->uniform()-0.5);
+    }
+  }
+
+  MPI_Bcast(&langextra[0][0],6*nbody,MPI_DOUBLE,0,world);
+}
+
+/* ----------------------------------------------------------------------
+   called from FixEnforce2d post_force() for 2d problems
+   zero all body values that should be zero for 2d model
+------------------------------------------------------------------------- */
+
+void FixRigid::enforce2d()
+{
+  for (int ibody = 0; ibody < nbody; ibody++) {
+    xcm[ibody][2] = 0.0;
+    vcm[ibody][2] = 0.0;
+    fcm[ibody][2] = 0.0;
+    torque[ibody][0] = 0.0;
+    torque[ibody][1] = 0.0;
+    angmom[ibody][0] = 0.0;
+    angmom[ibody][1] = 0.0;
+    omega[ibody][0] = 0.0;
+    omega[ibody][1] = 0.0;
+    if (langflag && langextra) {
+      langextra[ibody][2] = 0.0;
+      langextra[ibody][3] = 0.0;
+      langextra[ibody][4] = 0.0;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixRigid::compute_forces_and_torques()
 {
   int i,ibody;
 
@@ -948,89 +1012,37 @@ void FixRigid::post_force(int vflag)
 
   MPI_Allreduce(sum[0],all[0],6*nbody,MPI_DOUBLE,MPI_SUM,world);
 
-  if (langflag) {
+  // include Langevin thermostat forces
 
-    if (me == 0) {
-      double gamma1,gamma2;
-
-      double delta = update->ntimestep - update->beginstep;
-      if (delta != 0.0) delta /= update->endstep - update->beginstep;
-      t_target = t_start + delta * (t_stop-t_start);
-      double tsqrt = sqrt(t_target);
-
-      double boltz = force->boltz;
-      double dt = update->dt;
-      double mvv2e = force->mvv2e;
-      double ftm2v = force->ftm2v;
-
-      for (int i = 0; i < nbody; i++) {
-        gamma1 = -masstotal[i] / t_period / ftm2v;
-        gamma2 = sqrt(masstotal[i]) * tsqrt *
-          sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
-        langextra[i][0] = gamma1*vcm[i][0] + gamma2*(random->uniform()-0.5);
-        langextra[i][1] = gamma1*vcm[i][1] + gamma2*(random->uniform()-0.5);
-        langextra[i][2] = gamma1*vcm[i][2] + gamma2*(random->uniform()-0.5);
-
-        gamma1 = -1.0 / t_period / ftm2v;
-        gamma2 = tsqrt * sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
-        langextra[i][3] = inertia[i][0]*gamma1*omega[i][0] +
-          sqrt(inertia[i][0])*gamma2*(random->uniform()-0.5);
-        langextra[i][4] = inertia[i][1]*gamma1*omega[i][1] +
-          sqrt(inertia[i][1])*gamma2*(random->uniform()-0.5);
-        langextra[i][5] = inertia[i][2]*gamma1*omega[i][2] +
-          sqrt(inertia[i][2])*gamma2*(random->uniform()-0.5);
-      }
-    }
-
-    MPI_Bcast(&langextra[0][0],6*nbody,MPI_DOUBLE,0,world);
-
-    for (int ibody = 0; ibody < nbody; ibody++) {
-      fcm[ibody][0] = all[ibody][0] + langextra[ibody][0];
-      fcm[ibody][1] = all[ibody][1] + langextra[ibody][1];
-      fcm[ibody][2] = all[ibody][2] + langextra[ibody][2];
-      torque[ibody][0] = all[ibody][3] + langextra[ibody][3];
-      torque[ibody][1] = all[ibody][4] + langextra[ibody][4];
-      torque[ibody][2] = all[ibody][5] + langextra[ibody][5];
-    }
+  for (ibody = 0; ibody < nbody; ibody++) {
+    fcm[ibody][0] = all[ibody][0] + langextra[ibody][0];
+    fcm[ibody][1] = all[ibody][1] + langextra[ibody][1];
+    fcm[ibody][2] = all[ibody][2] + langextra[ibody][2];
+    torque[ibody][0] = all[ibody][3] + langextra[ibody][3];
+    torque[ibody][1] = all[ibody][4] + langextra[ibody][4];
+    torque[ibody][2] = all[ibody][5] + langextra[ibody][5];
   }
 }
 
-/* ----------------------------------------------------------------------
-   called from FixEnforce2d post_force() for 2d problems
-   zero all body values that should be zero for 2d model
-------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- */
 
-void FixRigid::enforce2d()
+void FixRigid::post_force(int vflag)
 {
-  for (int ibody = 0; ibody < nbody; ibody++) {
-    xcm[ibody][2] = 0.0;
-    vcm[ibody][2] = 0.0;
-    fcm[ibody][2] = 0.0;
-    torque[ibody][0] = 0.0;
-    torque[ibody][1] = 0.0;
-    angmom[ibody][0] = 0.0;
-    angmom[ibody][1] = 0.0;
-    omega[ibody][0] = 0.0;
-    omega[ibody][1] = 0.0;
-    if (langflag && langextra) {
-      langextra[ibody][2] = 0.0;
-      langextra[ibody][3] = 0.0;
-      langextra[ibody][4] = 0.0;
-    }
-  }
+  if (langflag) apply_langevin_thermostat();
+  compute_forces_and_torques();
 }
 
 /* ---------------------------------------------------------------------- */
 
 void FixRigid::final_integrate()
 {
+  int ibody;
   double dtfm;
 
   // update vcm and angmom
-  // include Langevin thermostat forces
   // fflag,tflag = 0 for some dimensions in 2d
 
-  for (int ibody = 0; ibody < nbody; ibody++) {
+  for (ibody = 0; ibody < nbody; ibody++) {
 
     // update vcm by 1/2 step
 
