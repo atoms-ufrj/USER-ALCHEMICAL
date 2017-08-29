@@ -72,7 +72,7 @@ FixSoftcoreEE::FixSoftcoreEE(LAMMPS *lmp, int narg, char **arg) :
 
   // Check if this fix preceeds all fixes with initial_integrate:
   for (int i = 0; i < modify->nfix; i++)
-    if (modify->fmask[i] && INITIAL_INTEGRATE)
+    if (modify->fmask[i] & INITIAL_INTEGRATE)
       error->all(FLERR,"fix softcore/ee must preceed all time integration fixes");
 
   // Set fix softcore/ee properties:
