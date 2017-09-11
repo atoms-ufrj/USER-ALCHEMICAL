@@ -35,11 +35,15 @@ using namespace LAMMPS_NS;
 ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) : 
   Compute(lmp, narg, arg)
 {
-  if (narg != 3)
+  if (narg != 4)
     error->all(FLERR,"Illegal compute softcore/grid command");
 
   if (igroup)
     error->all(FLERR,"Compute softcore/grid must use group all");
+
+  vdwlflag = coulflag = 0;
+  if (strcmp(arg[3],"vdwl") == 0) vdwlflag = 1;
+  if (strcmp(arg[3],"coul") == 0) coulflag = 1;
 
   // Retrieve all lambda-related pair styles:
   PairHybridSoftcore *hybrid = dynamic_cast<PairHybridSoftcore*>(force->pair);
@@ -102,12 +106,18 @@ void ComputeSoftcoreGrid::compute_vector()
       pair[i]->compute(0,0);
       std::swap(atom->f,f);
     }
-    MPI_Allreduce(pair[i]->evdwlnode,&node_energy[0],size_vector,MPI_DOUBLE,MPI_SUM,world);
-    if (pair[i]->tail_flag) {
-      double volume = domain->xprd*domain->yprd*domain->zprd;
-      for (int j = 0; j < size_vector; j++)
-        node_energy[j] += pair[i]->etailnode[j]/volume;
+
+    if (vdwlflag) {
+      MPI_Allreduce(pair[i]->evdwlnode,&node_energy[0],size_vector,MPI_DOUBLE,MPI_SUM,world);
+      if (pair[i]->tail_flag) {
+        double volume = domain->xprd*domain->yprd*domain->zprd;
+        for (int j = 0; j < size_vector; j++)
+          node_energy[j] += pair[i]->etailnode[j]/volume; 
+      }
     }
+
+    else MPI_Allreduce(pair[i]->ecoulnode,&node_energy[0],size_vector,MPI_DOUBLE,MPI_SUM,world);
+
     for (int j = 0; j < size_vector; j++)
       vector[j] += node_energy[j];
   }

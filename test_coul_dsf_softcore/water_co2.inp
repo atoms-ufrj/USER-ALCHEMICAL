@@ -10,7 +10,7 @@ bond_style	harmonic
 angle_style	harmonic
 
 
-pair_style	hybrid/softcore lj/cut/coul/dsf/softcore 0.0 ${rc} lj/cut/coul/dsf 0.0 ${rc}
+pair_style	hybrid/softcore lj/cut/coul/damp/sf/linear 0.0 ${rc} lj/cut/coul/dsf 0.0 ${rc}
 read_data	water_co2.lmp
 
 timestep 	1

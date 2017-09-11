@@ -126,15 +126,14 @@ void PairLJCutCoulDampSFLinear::compute(int eflag, int vflag)
           forcelj = 0.0;
 
         if (rsq < cut_coulsq) {
-          prefactor = factor_coul*qtmp*q[j];
+          prefactor = qtmp*q[j];
           r = sqrt(rsq);
           unshifted( r, vr, fr );
           forcecoul = prefactor*(fr - f_shift)*r;
-        }
-        else
-          forcecoul = 0.0;
+          if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
+        } else forcecoul = 0.0;
 
-        fpair = lambda*(forcelj + forcecoul)*r2inv;
+        fpair = (forcelj + forcecoul*lambda)*r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -151,10 +150,10 @@ void PairLJCutCoulDampSFLinear::compute(int eflag, int vflag)
           else
             evdwl = 0.0;
 
-          if (rsq < cut_coulsq)
+          if (rsq < cut_coulsq) {
             ecoul = prefactor*(vr + r*f_shift - e_shift);
-          else
-            ecoul = 0.0;
+            if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
+          } else ecoul = 0.0;
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
@@ -174,7 +173,7 @@ void PairLJCutCoulDampSFLinear::compute(int eflag, int vflag)
   if (vflag_fdotr) virial_fdotr_compute();
 
   uptodate = gridflag;
-  gridflag = 0;
+//  gridflag = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -491,7 +490,7 @@ double PairLJCutCoulDampSFLinear::single(int i, int j, int itype, int jtype, dou
   if (rsq < cut_coulsq) {
     r = sqrt(rsq);
     unshifted( r, vr, fr );
-    prefactor = factor_coul * force->qqrd2e * atom->q[i] * atom->q[j];
+    prefactor = lambda*factor_coul * force->qqrd2e * atom->q[i] * atom->q[j];
     fforce += prefactor*(fr-f_shift)*r;
   }
   fforce *= r2inv;

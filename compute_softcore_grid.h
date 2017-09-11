@@ -34,7 +34,9 @@ class ComputeSoftcoreGrid : public Compute {
 
  private:
   int npairs;
-  class PairAlchemical **pair;
+  int vdwlflag;
+  int coulflag;
+ class PairAlchemical **pair;
 
   int nmax;
   double **f;
