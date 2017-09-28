@@ -283,7 +283,8 @@ void FixSoftcoreEE::pre_reverse(int eflag, int vflag)
   std::swap(f_soft,atom->f);
 
   // Compute lambda-related energy at every grid node:
-  double energy[gridsize] = {0.0};
+  double energy[gridsize];
+  for (int i = 0; i < gridsize; i++) energy[i] = 0.0;
   for (int i = 0; i < npairs; i++) {
     double node_energy[gridsize];
     MPI_Allreduce(pair[i]->evdwlnode,&node_energy[0],gridsize,MPI_DOUBLE,MPI_SUM,world);
