@@ -23,6 +23,7 @@ namespace LAMMPS_NS {
 class PairAlchemical : public Pair {
  friend class FixSoftcoreEE;
  friend class ComputeSoftcoreGrid;
+ friend class ComputeSoftcoreDerivative;
 
  public:
   PairAlchemical(class LAMMPS *);
@@ -45,6 +46,8 @@ class PairAlchemical : public Pair {
 
   void allocate();
   void add_node_to_grid(double);
+
+  virtual double derivative() {return 0.0;}
 };
 
 }

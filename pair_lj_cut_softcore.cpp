@@ -67,6 +67,8 @@ PairLJCutSoftcore::~PairLJCutSoftcore()
     memory->destroy(lj2);
     memory->destroy(lj3);
     memory->destroy(lj4);
+    memory->destroy(lj5);
+    memory->destroy(lj6);
     memory->destroy(offset);
 
     memory->destroy(asq);
@@ -459,6 +461,8 @@ void PairLJCutSoftcore::allocate()
   memory->create(lj2,n+1,n+1,"pair:lj2");
   memory->create(lj3,n+1,n+1,"pair:lj3");
   memory->create(lj4,n+1,n+1,"pair:lj4");
+  memory->create(lj5,n+1,n+1,"pair:lj5");
+  memory->create(lj6,n+1,n+1,"pair:lj6");
   memory->create(offset,n+1,n+1,"pair:offset");
 
   memory->create(asq,n+1,n+1,"pair:asq");
@@ -645,6 +649,8 @@ double PairLJCutSoftcore::init_one(int i, int j)
   double eps4 = 4.0 * epsilon[i][j];
   double efactor = eps4 * pow(lambda,exponent_n);
 
+  lj5[i][j] = lj5[j][i] = eps4 * sig12;
+  lj6[i][j] = lj6[j][i] = eps4 * sig6;
   lj3[i][j] = lj3[j][i] = efactor * sig12;
   lj4[i][j] = lj4[j][i] = efactor * sig6;
   lj1[i][j] = lj1[j][i] = 12.0 * lj3[i][j];
@@ -827,3 +833,68 @@ void *PairLJCutSoftcore::extract(const char *str, int &dim)
   if (strcmp(str,"sigma") == 0) return (void *) sigma;
   return NULL;
 }
+
+/* ---------------------------------------------------------------------- */
+
+// NOTE: This derivative considers both exponent_n = 1 and exponent_p = 1
+
+double PairLJCutSoftcore::derivative()
+{
+  int i,j,k,ii,jj,inum,jnum,itype,jtype;
+  double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
+  double rsq,r6,sinv,factor_lj;
+  int *ilist,*jlist,*numneigh,**firstneigh;
+
+  double **x = atom->x;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+  double *special_lj = force->special_lj;
+  int newton_pair = force->newton_pair;
+
+  inum = list->inum;
+  ilist = list->ilist;
+  numneigh = list->numneigh;
+  firstneigh = list->firstneigh;
+
+  // loop over neighbors of my atoms
+
+  double C = alpha*lambda;
+  double dEdl = 0.0;
+
+  for (ii = 0; ii < inum; ii++) {
+    i = ilist[ii];
+    xtmp = x[i][0];
+    ytmp = x[i][1];
+    ztmp = x[i][2];
+    itype = type[i];
+    jlist = firstneigh[i];
+    jnum = numneigh[i];
+
+    for (jj = 0; jj < jnum; jj++) {
+      j = jlist[jj];
+      factor_lj = special_lj[sbmask(j)];
+      j &= NEIGHMASK;
+
+      delx = xtmp - x[j][0];
+      dely = ytmp - x[j][1];
+      delz = ztmp - x[j][2];
+      rsq = delx*delx + dely*dely + delz*delz;
+      jtype = type[j];
+
+      if (rsq < cutsq[itype][jtype]) {
+        r6 = rsq*rsq*rsq;
+        sinv = 1.0/(r6 + asq[itype][jtype]);
+        evdwl = factor_lj*sinv*(lj5[itype][jtype]*sinv - lj6[itype][jtype]);
+        if (newton_pair)
+          dEdl += evdwl*(1.0 + C*sinv);
+        else
+          dEdl += 0.5*evdwl*(1.0 + C*sinv);
+      }
+    }
+  }
+
+  return dEdl;
+}
+
+/* ---------------------------------------------------------------------- */
+

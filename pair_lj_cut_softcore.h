@@ -59,6 +59,9 @@ class PairLJCutSoftcore : public PairAlchemical {
   double **asq;
   double ***lj3n,***lj4n,***asqn,***offsetn;
   double atanx_x(double x);
+
+  double **lj5,**lj6;
+  double derivative();
 };
 
 }
