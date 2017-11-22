@@ -53,7 +53,7 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
 
   if (gridflag) for (i = 0; i < gridsize; i++) ecoulnode[i] = 0.0;
 
-  ecoul = 0.0;
+  ecoul = dEdl = 0.0;
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
 
@@ -118,8 +118,10 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
           f[j][2] -= delz*fpair;
         }
 
-        if (eflag)
+        if (eflag) {
           ecoul = prefactor*(vr + r*f_shift - e_shift);
+          dEdl += ecoul;
+        }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
                              0.0,lambda*ecoul,fpair,delx,dely,delz);
@@ -355,4 +357,13 @@ void *PairCoulDampSFLinear::extract(const char *str, int &dim)
   }
   return NULL;
 }
+
+/* ---------------------------------------------------------------------- */
+
+double PairCoulDampSFLinear::derivative()
+{
+  return dEdl;
+}
+
+/* ---------------------------------------------------------------------- */
 

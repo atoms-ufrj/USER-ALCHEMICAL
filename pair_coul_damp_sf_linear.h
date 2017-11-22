@@ -49,6 +49,7 @@ class PairCoulDampSFLinear : public PairAlchemical {
   void read_restart_settings(FILE *);
   double single(int, int, int, int, double, double, double, double &);
   void *extract(const char *, int &);
+  double derivative();
 
  protected:
   double cut_coul,cut_coulsq;
@@ -56,6 +57,7 @@ class PairCoulDampSFLinear : public PairAlchemical {
   double f_shift,e_shift;
   double e_self;
   int self_flag;
+  double dEdl;
 
   virtual void allocate();
 
