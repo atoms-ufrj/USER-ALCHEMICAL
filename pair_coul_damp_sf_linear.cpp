@@ -37,9 +37,10 @@ PairCoulDampSFLinear::PairCoulDampSFLinear(LAMMPS *lmp) : PairAlchemical(lmp)
 
 PairCoulDampSFLinear::~PairCoulDampSFLinear()
 {
-  if (!copymode)
-    if (allocated)
+  if (!copymode && allocated) {
       memory->destroy(setflag);
+      memory->destroy(cutsq);
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -108,7 +109,7 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
         unshifted( r, vr, fr );
         forcecoul = prefactor*(fr - f_shift)*r;
 
-        fpair = (forcecoul*lambda)*r2inv;
+        fpair = forcecoul*lambda*r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -156,6 +157,9 @@ void PairCoulDampSFLinear::allocate()
   for (int i = 1; i <= n; i++)
     for (int j = i; j <= n; j++)
       setflag[i][j] = 0;
+
+  memory->create(cutsq,n+1,n+1,"pair:cutsq");
+
 }
 
 /* ----------------------------------------------------------------------
@@ -176,7 +180,8 @@ void PairCoulDampSFLinear::settings(int narg, char **arg)
 
 void PairCoulDampSFLinear::coeff(int narg, char **arg)
 {
-  if (narg != 2) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (narg != 2)
+    error->all(FLERR,"Incorrect args for pair coefficients");
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
@@ -201,7 +206,7 @@ void PairCoulDampSFLinear::coeff(int narg, char **arg)
 void PairCoulDampSFLinear::init_style()
 {
   if (!atom->q_flag)
-    error->all(FLERR,"Pair style lj/cut/coul/dsf requires atom charges");
+    error->all(FLERR,"Pair style coul/damp/sf/linear requires atom charges");
 
   neighbor->request(this,instance_me);
 
@@ -261,6 +266,8 @@ void PairCoulDampSFLinear::modify_params(int narg, char **arg)
       arg[i] = arg[skip[i]];
     PairAlchemical::modify_params(ns, arg);
   }
+
+  tail_flag = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -364,6 +371,3 @@ double PairCoulDampSFLinear::derivative()
 {
   return dEdl;
 }
-
-/* ---------------------------------------------------------------------- */
-

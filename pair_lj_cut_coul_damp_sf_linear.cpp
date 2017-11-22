@@ -269,7 +269,7 @@ void PairLJCutCoulDampSFLinear::coeff(int narg, char **arg)
 void PairLJCutCoulDampSFLinear::init_style()
 {
   if (!atom->q_flag)
-    error->all(FLERR,"Pair style lj/cut/coul/dsf requires atom charges");
+    error->all(FLERR,"Pair style lj/cut/coul/damp/sf/linear requires atom charges");
 
   neighbor->request(this,instance_me);
 
