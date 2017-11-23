@@ -105,9 +105,13 @@ void PairCoulSFLinear::compute(int eflag, int vflag)
         r2inv = 1.0/rsq;
 
         prefactor = qtmp*q[j];
-        r = sqrt(rsq);
-        vr = fr = 1.0/r;
-        forcecoul = prefactor*(fr - f_shift)*r;
+        if (intra)
+          forcecoul = prefactor*sqrt(r2inv);
+        else {
+          r = sqrt(rsq);
+          vr = fr = 1.0/r;
+          forcecoul = prefactor*(fr - f_shift)*r;
+        }
 
         fpair = forcecoul*lambda*r2inv;
         f[i][0] += delx*fpair;
@@ -120,7 +124,7 @@ void PairCoulSFLinear::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          ecoul = prefactor*(vr + r*f_shift - e_shift);
+          ecoul = intra ? forcecoul : prefactor*(vr + r*f_shift - e_shift);
           dEdl += ecoul;
         }
 
