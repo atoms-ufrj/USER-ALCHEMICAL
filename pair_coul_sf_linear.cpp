@@ -168,10 +168,9 @@ void PairCoulSFLinear::allocate()
 
 void PairCoulSFLinear::settings(int narg, char **arg)
 {
-  if (narg != 2) error->all(FLERR,"Illegal pair_style command");
+  if (narg != 1) error->all(FLERR,"Illegal pair_style command");
 
-  alpha = force->numeric(FLERR,arg[0]);
-  cut_coul = force->numeric(FLERR,arg[1]);
+  cut_coul = force->numeric(FLERR,arg[0]);
 }
 
 /* ----------------------------------------------------------------------
@@ -222,7 +221,7 @@ void PairCoulSFLinear::init_style()
 
 void PairCoulSFLinear::reinit()
 {
-  e_self = -lambda*(e_shift/2.0 + alpha/sqrt(MY_PI))*force->qqrd2e;
+  e_self = -lambda*(e_shift/2.0)*force->qqrd2e;
 }
 
 /* ----------------------------------------------------------------------
@@ -308,7 +307,6 @@ void PairCoulSFLinear::read_restart(FILE *fp)
 
 void PairCoulSFLinear::write_restart_settings(FILE *fp)
 {
-  fwrite(&alpha,sizeof(double),1,fp);
   fwrite(&cut_coul,sizeof(double),1,fp);
   fwrite(&self_flag,sizeof(int),1,fp);
 }
@@ -320,11 +318,9 @@ void PairCoulSFLinear::write_restart_settings(FILE *fp)
 void PairCoulSFLinear::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
-    fread(&alpha,sizeof(double),1,fp);
     fread(&cut_coul,sizeof(double),1,fp);
     fread(&self_flag,sizeof(int),1,fp);
   }
-  MPI_Bcast(&alpha,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&cut_coul,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&self_flag,1,MPI_INT,0,world);
 }
