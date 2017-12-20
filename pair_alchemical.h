@@ -43,6 +43,7 @@ class PairAlchemical : public Pair {
   double *evdwlnode;  // total van der Waals potential energy at each node
   double *ecoulnode;  // total Coulomb potential energy at each node
   double *etailnode;  // tail correction for energy at each node
+  double efactor;     // lambda^exponent_n
 
   void allocate();
   void add_node_to_grid(double);

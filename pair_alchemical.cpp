@@ -33,6 +33,7 @@ PairAlchemical::PairAlchemical(LAMMPS *lmp) : Pair(lmp)
   exponent_n = 1.0;
   exponent_p = 1.0;
   lambda = 1.0;
+  efactor = 1.0;
 
   gridflag = 1;
   gridsize = 0;
@@ -149,6 +150,7 @@ void PairAlchemical::modify_params(int narg, char **arg)
           error->all(FLERR,"Coupling parameter value out of range");
         lambda = value;
       }
+      efactor = pow(lambda, exponent_n);
       iarg += 2;
     }
     else if (m == 4) { // set_grid:
