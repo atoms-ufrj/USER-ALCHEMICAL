@@ -4,7 +4,7 @@ variable	seed equal 6384
 variable	temp equal 300.0
 variable	nevery equal 10
 variable	nfreq equal 10
-variable        softcore string lj/cut/softcore
+variable    softcore string lj/cut/softcore
 units		real
 atom_style	full
 
@@ -60,6 +60,6 @@ compute         press all pressure thermo_temp virial
 variable	delta_e equal round(10000*(c_pe-c_thermo_pe))
 variable	delta_p equal round(10000*(c_press-v_press))
 
-thermo_style	custom step f_2[*] temp pe c_pe v_delta_e c_press v_press v_delta_p c_E[*]
+thermo_style	custom step f_2[*] temp pe c_pe v_delta_e c_press v_press v_delta_p #c_E[*]
 
 run		200

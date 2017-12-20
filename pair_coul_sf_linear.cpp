@@ -131,7 +131,7 @@ void PairCoulSFLinear::compute(int eflag, int vflag)
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
                              0.0,lambda*ecoul,fpair,delx,dely,delz);
 
-        if (gridflag && rsq < cut_coulsq) {
+        if (gridflag) {
           for (int k = 0; k < gridsize; k++)
             if (newton_pair || j < nlocal)
               ecoulnode[k] += lambdanode[k]*ecoul;

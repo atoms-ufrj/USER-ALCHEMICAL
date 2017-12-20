@@ -4,13 +4,15 @@ variable	seed equal 6384
 variable	temp equal 300.0
 variable	nevery equal 10
 variable	nfreq equal 10
-variable        softcore string lj/cut/softcore
+variable    softcore string lj/cut/coul/damp/sf/softcore
+#variable    softcore string lj/cut/softcore
 units		real
 atom_style	full
 
 bond_style	harmonic
 angle_style	harmonic
-pair_style	hybrid/softcore ${softcore} ${rc} lj/cut/coul/dsf 0.0 ${rc}
+pair_style	hybrid/softcore ${softcore} 0.2 ${rc} lj/cut/coul/dsf 0.0 ${rc}
+#pair_style	hybrid/softcore ${softcore} ${rc} lj/cut/coul/dsf 0.0 ${rc}
 read_data	water_out.lmp
 timestep 	1
 
@@ -29,22 +31,23 @@ pair_coeff	2 3 ${softcore} 0.0	1.975
 pair_coeff	2 4 ${softcore} 0.1179064868 3.55035005
 
 # Solvent-Solvent:
-pair_coeff	3 3 lj/cut/coul/dsf 0.0 0.0
-pair_coeff	4 4 lj/cut/coul/dsf 0.1521 3.1507
-pair_coeff	3 4 lj/cut/coul/dsf 0.0 1.57535
+pair_coeff	3 3 ${softcore} 0.0 0.0
+pair_coeff	4 4 ${softcore} 0.1521 3.1507
+pair_coeff	3 4 ${softcore} 0.0 1.57535
 
 #delete_bonds    all bond 1
 #delete_bonds    all angle 1
 #delete_bonds    all bond 2
 #delete_bonds    all angle 2
 
-pair_modify     pair ${softcore} alpha 0.5 n 1 p 1
+pair_modify     pair ${softcore} alpha 0.5 n 1 p 1 lambda 1.0
 pair_modify     pair ${softcore} set_grid 16 0.0 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0
 pair_modify	tail yes
 
 #fix		2 all softcore/ee 5 123 300
-group		solute type 1 2
-fix		1 all rigid/npt group 1 solute temp 300 300 100 iso 1 1 1000
+#group		solute type 1 2
+#fix		1 all rigid/npt group 1 solute temp 300 300 100 iso 1 1 1000
+fix         1 all rigid/nve/small molecule
 compute         E all softcore/grid vdwl
 compute		dEdl all softcore/derivative
 
@@ -63,7 +66,7 @@ variable	delta_e equal round(10000*(c_pe-c_thermo_pe))
 variable	delta_p equal round(10000*(c_press-v_press))
 
 #thermo_style	custom step f_2[*] temp pe c_pe v_delta_e c_press v_press v_delta_p c_dEdl c_E[*]
-thermo_style	custom step temp pe press c_dEdl
+thermo_style	custom step temp pe press etotal c_E[*] c_dEdl
 
 dump		1 all custom 20 test.lammpstrj id mol type x y z ix iy iz
-run		2000
+run		50
