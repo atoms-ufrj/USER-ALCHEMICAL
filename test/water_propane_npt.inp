@@ -48,7 +48,7 @@ pair_modify     tail yes
 #group		solute type 1 2
 #fix		1 all rigid/npt group 1 solute temp 300 300 100 iso 1 1 1000
 fix         1 all rigid/nve/small molecule
-compute         E all softcore/grid vdwl
+compute         E all softcore/grid
 compute		dEdl all softcore/derivative
 
 thermo_modify	norm no

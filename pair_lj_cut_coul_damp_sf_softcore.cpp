@@ -209,11 +209,11 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
 
             if (newton_pair || j < nlocal) {
               evdwlnode[k] += evdwl;
-              ecoulnode[k] += lambdanode[k]*ecoul;
+              ecoulnode[k] += ecoul;
             }
             else {
               evdwlnode[k] += 0.5*evdwl;
-              ecoulnode[k] += 0.5*lambdanode[k]*ecoul;
+              ecoulnode[k] += 0.5*ecoul;
             }
 
           }
@@ -648,8 +648,8 @@ void PairLJCutCoulDampSFSoftcore::init_style()
   double save = lambda;
   for (int k = 0; k < gridsize; k++) {
     lambda = lambdanode[k];
+    efactorn[k] = efactor = pow(lambda, exponent_n);
     etailnode[k] = 0.0;
-    efactorn[k] = pow(lambda, exponent_n);
     for (int i = 1; i <= n; i++)
       for (int j = i; j <= n; j++)
         if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
@@ -911,16 +911,25 @@ double PairLJCutCoulDampSFSoftcore::single(int i, int j, int itype, int jtype, d
                          double factor_coul, double factor_lj,
                          double &fforce)
 {
-  double r6,s6inv,forcelj,philj;
+  double r4,s6,s6inv,forcelj,philj;
+  double s,vs,fs,prefactor,forcecoul,phicoul;
 
-  r6 = rsq*rsq*rsq;
-  s6inv = 1.0/(r6 + asq[itype][jtype]);
-  forcelj = r6*s6inv*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
-  fforce = factor_lj*forcelj/rsq;
+  r4 = rsq*rsq;
+  s6 = rsq*r4 + asq[itype][jtype];
+  s6inv = 1.0/s6;
+  forcelj = s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
 
-  philj = s6inv*(lj3[itype][jtype]*s6inv-lj4[itype][jtype]) -
-    offset[itype][jtype];
-  return factor_lj*philj;
+  prefactor = force->qqrd2e * atom->q[i] * atom->q[j];
+  s = sixthroot(s6);
+  unshifted( s, vs, fs );
+  forcecoul = prefactor*(fs - f_shift)*s;
+
+  fforce = efactor*(factor_lj*forcelj + factor_coul*forcecoul)*r4*s6inv;
+
+  philj = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) - offset[itype][jtype];
+  phicoul = prefactor*(vs + s*f_shift - e_shift);
+
+  return efactor*(factor_lj*philj + factor_coul*phicoul);
 }
 
 /* ---------------------------------------------------------------------- */
