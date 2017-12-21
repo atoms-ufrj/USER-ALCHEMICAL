@@ -63,13 +63,12 @@ class PairLJCutCoulDampSFSoftcore : public PairAlchemical {
   double **lj1,**lj2,**lj3,**lj4,**offset;
   double *cut_respa;
 
-  double **asq;
+  double **asq, **bsq;
   double *efactorn,***asqn;
   double atanx_x(double x);
 
   double cut_coul,cut_coulsq;
   double alphaC;
-  double sigmaC;
   double f_shift,e_shift;
   double e_self;
   int self_flag;

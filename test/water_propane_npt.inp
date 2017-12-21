@@ -11,7 +11,7 @@ atom_style	full
 
 bond_style	harmonic
 angle_style	harmonic
-pair_style	hybrid/softcore ${softcore} 0.2 2.0 ${rc} lj/cut/coul/dsf 0.0 ${rc}
+pair_style	hybrid/softcore ${softcore} 0.2 ${rc} lj/cut/coul/dsf 0.0 ${rc}
 #pair_style	hybrid/softcore ${softcore} ${rc} lj/cut/coul/dsf 0.0 ${rc}
 read_data	water_out.lmp
 timestep 	1
