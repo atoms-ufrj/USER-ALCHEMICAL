@@ -44,6 +44,7 @@ class PairAlchemical : public Pair {
   double *ecoulnode;  // total Coulomb potential energy at each node
   double *etailnode;  // tail correction for energy at each node
   double efactor;     // lambda^exponent_n
+  double detaildl;    // derivative of tail correct wrt lambda
 
   void allocate();
   void add_node_to_grid(double);

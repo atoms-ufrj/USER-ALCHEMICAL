@@ -63,7 +63,7 @@ class PairLJCutCoulDampSFSoftcore : public PairAlchemical {
   double **lj1,**lj2,**lj3,**lj4,**offset;
   double *cut_respa;
 
-  double **asq, **bsq;
+  double **asq;
   double *efactorn,***asqn;
   double atanx_x(double x);
 
@@ -74,6 +74,9 @@ class PairLJCutCoulDampSFSoftcore : public PairAlchemical {
   int self_flag;
 
   virtual void allocate();
+
+  double detaildl_ij;
+  double **bsq;
   double derivative();
 
   inline void unshifted( double r, double &v, double &f )

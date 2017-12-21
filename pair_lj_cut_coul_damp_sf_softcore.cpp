@@ -45,7 +45,7 @@
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
-#define sixthroot(X)  cbrt(sqrt(X))
+#define sixthroot(X) cbrt(sqrt(X))
 
 /* ---------------------------------------------------------------------- */
 
@@ -659,11 +659,23 @@ void PairLJCutCoulDampSFSoftcore::init_style()
         if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
           init_one(i,j);
           asqn[i][j][k] = asqn[j][i][k] = asq[i][j];
-          if (tail_flag) etailnode[k] += (i == j ? 1.0 : 2.0)*etail_ij;
+          if (tail_flag)
+            etailnode[k] += i == j ? etail_ij : 2.0*etail_ij;
         }
   }
+
   lambda = save;
   efactor = pow(lambda, exponent_n);
+
+  if (tail_flag) {
+    detaildl = 0.0;
+    for (int i = 1; i <= n; i++)
+      for (int j = i; j <= n; j++)
+        if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
+          init_one(i,j);
+          detaildl += i == j ? detaildl_ij : 2.0*detaildl_ij;
+        }
+  }
 
   PairAlchemical::init_style();
 }
@@ -754,9 +766,12 @@ double PairLJCutCoulDampSFSoftcore::init_one(int i, int j)
     MPI_Allreduce(count,all,2,MPI_DOUBLE,MPI_SUM,world);
 
     double TwoPiNiNj = 2.0*MY_PI*all[0]*all[1];
-    double fe, ge, fw, gw;
-    if (asq[i][j] == 0.0)
+    double fe, ge, fw, gw, dfedx_x, dgedx_x;
+    if (asq[i][j] == 0.0) {
       fe = ge = fw = gw = 1.0;
+      dfedx_x = -2.0/3.0;
+      dgedx_x = -12.0/5.0;
+    }
     else {
       double x = sqrt(asq[i][j])/rc3;
       double x2 = x*x;
@@ -765,11 +780,18 @@ double PairLJCutCoulDampSFSoftcore::init_one(int i, int j)
       ge = 1.5*(fe - y)/x2;
       fw = 0.5*(fe + y);
       gw = 0.75*(fw - y*y)/x2;
+      dfedx_x = -2.0*ge/3.0;
+      dgedx_x = 3.0*(y*y - ge)/x2;
     }
-    double b6 = efactor*eps4*sig6/(3.0*rc3);
+    double xdxdl = 3.0*bsq[i][j]/rc6;
+    double b6 = eps4*sig6/(3.0*rc3);
     double b12 = b6*sig6/(3.0*rc6);
     etail_ij = TwoPiNiNj*(b12*ge - b6*fe);
     ptail_ij = TwoPiNiNj*(4.0*b12*gw - 2.0*b6*fw);
+    detaildl_ij = exponent_n*pow(lambda,exponent_n - 1.0)*etail_ij +
+                  efactor*TwoPiNiNj*(b12*dgedx_x - b6*dfedx_x)*xdxdl;
+    etail_ij *= efactor;
+    ptail_ij *= efactor;
   }
 
   return MAX(rc, cut_coul);

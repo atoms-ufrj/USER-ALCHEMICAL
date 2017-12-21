@@ -34,6 +34,7 @@ PairAlchemical::PairAlchemical(LAMMPS *lmp) : Pair(lmp)
   exponent_p = 1.0;
   lambda = 1.0;
   efactor = 1.0;
+  detaildl = 0.0;
 
   gridflag = 1;
   gridsize = 0;

@@ -40,7 +40,7 @@ pair_coeff	3 4 ${softcore} 0.0 1.57535
 #delete_bonds    all bond 2
 #delete_bonds    all angle 2
 
-pair_modify     pair ${softcore} alpha 0.5 n 1 p 1 lambda 1.0 self no
+pair_modify     pair ${softcore} alpha 0.5 n 1 p 1 lambda 0.5 self no
 pair_modify     pair ${softcore} set_grid 16 0.0 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0
 pair_modify     tail yes
 
@@ -69,4 +69,4 @@ variable	delta_p equal round(10000*(c_press-v_press))
 thermo_style	custom step temp pe press etotal c_E[*] c_dEdl
 
 dump		1 all custom 20 test.lammpstrj id mol type x y z ix iy iz
-run		50
+run		100

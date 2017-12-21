@@ -73,5 +73,10 @@ double ComputeSoftcoreDerivative::compute_scalar()
 
   MPI_Allreduce(&one,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
 
+  double volume = domain->xprd*domain->yprd*domain->zprd;
+  for (int i = 0; i < npairs; i++)
+    if (pair[i]->tail_flag)
+      scalar += pair[i]->detaildl/volume;
+
   return scalar;
 }
