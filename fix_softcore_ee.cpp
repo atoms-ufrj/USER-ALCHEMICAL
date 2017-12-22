@@ -228,7 +228,7 @@ void FixSoftcoreEE::initial_integrate(int vflag)
       class PairAlchemical *ipair = pair[i];
       ipair->gridflag = 0;
       ipair->compute(this->eflag,this->vflag);
-      ipair->uptodate = 1;
+      ipair->grid_uptodate = 1;
       if (ipair->eflag_global) {
         hybrid->eng_vdwl += ipair->eng_vdwl;
         hybrid->eng_coul += ipair->eng_coul;

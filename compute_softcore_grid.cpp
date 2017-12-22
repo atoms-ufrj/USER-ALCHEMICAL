@@ -68,6 +68,10 @@ ComputeSoftcoreGrid::ComputeSoftcoreGrid(LAMMPS *lmp, int narg, char **arg) :
       error->all(FLERR,"Compute softcore/grid requires a softcore-type pair style");
   }
 
+  // Activate grid energy computation in all pair styles:
+  for (int i = 0; i < npairs; i++)
+    pair[i]->gridflag = 1;
+
   // Determine the number of nodes in the lambda grid:
   int nodes = pair[0]->gridsize;
   int all_equal = 1;
@@ -107,11 +111,13 @@ void ComputeSoftcoreGrid::compute_vector()
       error->all(FLERR,"compute softcore/grid: number of lambda nodes has changed");
 
     double node_energy[size_vector];
-    if (!pair[i]->uptodate) {
+    if (!pair[i]->grid_uptodate) {
       int n = number_of_atoms();
       std::swap(f,atom->f);
+      int save = pair[i]->gridflag;
       pair[i]->gridflag = 1;
-      pair[i]->compute(0,0);
+      pair[i]->compute(1,0);
+      pair[i]->gridflag = save;
       std::swap(atom->f,f);
     }
 

@@ -170,7 +170,7 @@ void PairLJCutCoulDampSFLinear::compute(int eflag, int vflag)
 
   if (vflag_fdotr) virial_fdotr_compute();
 
-  uptodate = gridflag;
+  grid_uptodate = gridflag;
 //  gridflag = 0;
 }
 

@@ -36,9 +36,11 @@ PairAlchemical::PairAlchemical(LAMMPS *lmp) : Pair(lmp)
   efactor = 1.0;
   detaildl = 0.0;
 
-  gridflag = 1;
+  gridflag = 0;
   gridsize = 0;
-  uptodate = 0;
+  grid_uptodate = 0;
+  derivflag = 0;
+  deriv_uptodate = 0;
   allocate();
 }
 

@@ -83,14 +83,23 @@ PairLJCutCoulDampSFSoftcore::~PairLJCutCoulDampSFSoftcore()
 
 void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
 {
-  int i,j,ii,jj,inum,jnum,itype,jtype,intra;
-  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,ecoul,fpair;
+  int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
+  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,ecoul,Ws6inv,fpair;
   double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
+  double dEdl_ij,diff_efactor;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  if (gridflag)
+  if (eflag && derivflag) {
+    dEdl = 0.0;
+    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
+    deriv_uptodate = 1;
+  }
+
+  if (eflag && gridflag) {
     for (i = 0; i < gridsize; i++)
       evdwlnode[i] = ecoulnode[i] = 0.0;
+    grid_uptodate = 1;
+  }
 
   if (eflag || vflag)
     ev_setup(eflag,vflag);
@@ -166,7 +175,8 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
         else
           forcecoul = 0.0;
 
-        fpair = efactor*(factor_lj*forcelj + forcecoul)*r4*s6inv;
+        Ws6inv = efactor*(factor_lj*forcelj + forcecoul)*s6inv;
+        fpair = Ws6inv*r4;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
@@ -188,47 +198,48 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
             ecoul = intra ? forcecoul : prefactor*(vs + s*f_shift - e_shift);
           else
             ecoul = 0.0;
+
+          if (derivflag) {
+            dEdl_ij = diff_efactor*(evdwl + ecoul) + bsq[itype][jtype]*Ws6inv;
+            dEdl += (newton_pair || j < nlocal ? dEdl_ij : 0.5*dEdl_ij);
+          }
+
+          if (gridflag)
+            for (k = 0; k < gridsize; k++) {
+              s6 = r6 + asqn[itype][jtype][k];
+              s6inv = 1.0/s6;
+
+              evdwl = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
+                      offset[itype][jtype];
+              evdwl *= efactorn[k]*factor_lj;
+
+              if (intra)
+                ecoul = sixthroot(s6inv);
+              else {
+                s = sixthroot(s6);
+                unshifted( s, vs, fs );
+                ecoul = vs + s*f_shift - e_shift;
+              }
+              ecoul *= efactorn[k]*prefactor;
+
+              if (newton_pair || j < nlocal) {
+                evdwlnode[k] += evdwl;
+                ecoulnode[k] += ecoul;
+              }
+              else {
+                evdwlnode[k] += 0.5*evdwl;
+                ecoulnode[k] += 0.5*ecoul;
+              }
+            }
         }
 
         if (evflag)
           ev_tally(i,j,nlocal,newton_pair,efactor*evdwl,efactor*ecoul,fpair,delx,dely,delz);
-
-        if (gridflag)
-          for (int k = 0; k < gridsize; k++) {
-            s6 = r6 + asqn[itype][jtype][k];
-            s6inv = 1.0/s6;
-
-            evdwl = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
-                    offset[itype][jtype];
-            evdwl *= efactorn[k]*factor_lj;
-
-            if (intra)
-              ecoul = sixthroot(s6inv);
-            else {
-              s = sixthroot(s6);
-              unshifted( s, vs, fs );
-              ecoul = vs + s*f_shift - e_shift;
-            }
-            ecoul *= efactorn[k]*prefactor;
-
-            if (newton_pair || j < nlocal) {
-              evdwlnode[k] += evdwl;
-              ecoulnode[k] += ecoul;
-            }
-            else {
-              evdwlnode[k] += 0.5*evdwl;
-              ecoulnode[k] += 0.5*ecoul;
-            }
-
-          }
       }
     }
   }
 
   if (vflag_fdotr) virial_fdotr_compute();
-
-  uptodate = gridflag;
-  gridflag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -971,96 +982,3 @@ void *PairLJCutCoulDampSFSoftcore::extract(const char *str, int &dim)
 }
 
 /* ---------------------------------------------------------------------- */
-
-// NOTE: This derivative is only valid if tail corrections are not used
-
-double PairLJCutCoulDampSFSoftcore::derivative()
-{
-  int i,j,ii,jj,inum,jnum,itype,jtype,intra;
-  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs;
-  double s,rsq,r2inv,r6,s6,s6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
-  int *ilist,*jlist,*numneigh,**firstneigh;
-  double E, W, dEdl_ij;
-
-  double **x = atom->x;
-  double **f = atom->f;
-  double *q = atom->q;
-  int *type = atom->type;
-  int nlocal = atom->nlocal;
-  double *special_lj = force->special_lj;
-  double *special_coul = force->special_coul;
-  int newton_pair = force->newton_pair;
-  double qqrd2e = force->qqrd2e;
-
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  firstneigh = list->firstneigh;
-
-  double d_efactor_d_l = exponent_n*pow(lambda,exponent_n - 1.0);
-  // loop over neighbors of my atoms
-
-  double dEdl = 0.0;
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
-    itype = type[i];
-    jlist = firstneigh[i];
-    jnum = numneigh[i];
-    qtmp = qqrd2e*q[i];
-
-    for (jj = 0; jj < jnum; jj++) {
-      j = jlist[jj];
-      intra = sbmask(j);
-      factor_lj = special_lj[intra];
-      factor_coul = special_coul[intra];
-      j &= NEIGHMASK;
-
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
-      delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
-      jtype = type[j];
-
-      if (rsq < cutsq[itype][jtype]) {
-        r6 = rsq*rsq*rsq;
-        s6 = r6 + asq[itype][jtype];
-        s6inv = 1.0/s6;
-
-        if (rsq < cut_ljsq[itype][jtype]) {
-          W = factor_lj*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
-          E = factor_lj*(s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
-                         offset[itype][jtype]);
-        }
-        else
-          W = E = 0.0;
-
-        if (rsq < cut_coulsq) {
-          prefactor = factor_coul*qtmp*q[j];
-          if (intra) {
-            forcecoul = prefactor*sixthroot(s6inv);
-            E += forcecoul;
-            W += forcecoul;
-          }
-          else {
-            s = sixthroot(s6);
-            unshifted( s, vs, fs );
-            E += prefactor*(vs + s*f_shift - e_shift);
-            W += prefactor*(fs - f_shift)*s;
-          }
-        }
-
-        dEdl_ij = d_efactor_d_l*E + efactor*bsq[itype][jtype]*s6inv*W;
-
-        dEdl += (newton_pair || j < nlocal ? dEdl_ij : 0.5*dEdl_ij);
-      }
-    }
-  }
-
-  return dEdl;
-}
-
-/* ---------------------------------------------------------------------- */
-

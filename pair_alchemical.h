@@ -35,16 +35,19 @@ class PairAlchemical : public Pair {
 
  protected:
   double alpha, exponent_n, exponent_p;  // softcore model parameters
-  double lambda;                         // coupling parameter value
-  int    gridflag;    // 1 if grid must be computed in the current step
-  int    uptodate;    // 1 if grid was computed in the latest step
-  int    gridsize;    // number of nodes in the grid
-  double *lambdanode; // lambda value at each node
-  double *evdwlnode;  // total van der Waals potential energy at each node
-  double *ecoulnode;  // total Coulomb potential energy at each node
-  double *etailnode;  // tail correction for energy at each node
-  double efactor;     // lambda^exponent_n
-  double detaildl;    // derivative of tail correct wrt lambda
+  double lambda;          // coupling parameter value
+  int    gridflag;        // 1 if grid must be computed in the current step
+  int    grid_uptodate;   // 1 if grid was computed in the latest step
+  int    gridsize;        // number of nodes in the grid
+  int    derivflag;       // 1 if derivative must be computed in the current step
+  int    deriv_uptodate;  // 1 if derivative was computed in the latest step
+  double *lambdanode;     // lambda value at each node
+  double *evdwlnode;      // total van der Waals potential energy at each node
+  double *ecoulnode;      // total Coulomb potential energy at each node
+  double *etailnode;      // tail correction for energy at each node
+  double efactor;         // lambda^exponent_n
+  double detaildl;        // derivative of tail correct wrt lambda
+  double dEdl;            // derivative of potential energy (except tail) wrt lambda
 
   void allocate();
   void add_node_to_grid(double);

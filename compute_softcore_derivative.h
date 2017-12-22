@@ -35,6 +35,10 @@ class ComputeSoftcoreDerivative : public Compute {
  private:
   int npairs;
   class PairAlchemical **pair;
+
+  int nmax;
+  double **f;
+  int number_of_atoms();
 };
 
 }

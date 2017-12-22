@@ -58,8 +58,16 @@ ComputeSoftcoreDerivative::ComputeSoftcoreDerivative(LAMMPS *lmp, int narg, char
       error->all(FLERR,"Compute softcore/derivative requires a softcore-type pair style");
   }
 
+  // Activate derivative computation in all pair styles:
+  for (int i = 0; i < npairs; i++)
+    pair[i]->derivflag = 1;
+
   scalar_flag = 1;
   extscalar = 1;
+
+  nmax = atom->nlocal;
+  if (force->newton_pair) nmax += atom->nghost;
+  memory->create(f,nmax,3,"compute_softcore_derivative::f");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -68,8 +76,18 @@ double ComputeSoftcoreDerivative::compute_scalar()
 {
   // Compute lambda-derivative of energy for every pair style:
   double one = 0.0;
-  for (int i = 0; i < npairs; i++)
-    one += pair[i]->derivative();
+  for (int i = 0; i < npairs; i++) {
+    if (!pair[i]->deriv_uptodate) {
+      int n = number_of_atoms();
+      std::swap(f,atom->f);
+      int save = pair[i]->derivflag;
+      pair[i]->derivflag = 1;
+      pair[i]->compute(1,0);
+      pair[i]->derivflag = save;
+      std::swap(atom->f,f);
+    }
+    one += pair[i]->dEdl;
+  }
 
   MPI_Allreduce(&one,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
 
@@ -79,4 +97,20 @@ double ComputeSoftcoreDerivative::compute_scalar()
       scalar += pair[i]->detaildl/volume;
 
   return scalar;
+}
+
+/* ----------------------------------------------------------------------
+   Return the size of per-atom arrays (increase storage space if needed)
+------------------------------------------------------------------------- */
+
+int ComputeSoftcoreDerivative::number_of_atoms()
+{
+  int n = atom->nlocal;
+  if (force->newton_pair)
+    n += atom->nghost;
+  if (n > nmax) {
+    nmax = n;
+    memory->grow(f,nmax,3,"compute_softcore_derivative::f");
+  }
+  return n;
 }

@@ -77,7 +77,6 @@ class PairLJCutCoulDampSFSoftcore : public PairAlchemical {
 
   double detaildl_ij;
   double **bsq;
-  double derivative();
 
   inline void unshifted( double r, double &v, double &f )
   {
