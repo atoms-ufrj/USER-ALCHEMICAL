@@ -44,6 +44,8 @@
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
+#define sixthroot(X) cbrt(sqrt(X))
+
 /* ---------------------------------------------------------------------- */
 
 PairLJCutSoftcore::PairLJCutSoftcore(LAMMPS *lmp) : PairAlchemical(lmp)
@@ -60,18 +62,17 @@ PairLJCutSoftcore::~PairLJCutSoftcore()
     memory->destroy(setflag);
     memory->destroy(cutsq);
 
-    memory->destroy(cut);
+    memory->destroy(cut_lj);
     memory->destroy(epsilon);
     memory->destroy(sigma);
     memory->destroy(lj1);
     memory->destroy(lj2);
     memory->destroy(lj3);
     memory->destroy(lj4);
-    memory->destroy(lj5);
-    memory->destroy(lj6);
     memory->destroy(offset);
 
     memory->destroy(asq);
+    memory->destroy(bsq);
   }
 }
 
@@ -79,16 +80,28 @@ PairLJCutSoftcore::~PairLJCutSoftcore()
 
 void PairLJCutSoftcore::compute(int eflag, int vflag)
 {
-  int i,j,k,ii,jj,inum,jnum,itype,jtype;
-  double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r6,sinv,forcelj,factor_lj;
+  int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
+  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,Ws6inv,fpair;
+  double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,factor_lj;
+  double dEdl_ij,diff_efactor;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  if (gridflag) for (i = 0; i < gridsize; i++) evdwlnode[i] = 0.0;
+  if (eflag && derivflag) {
+    dEdl = 0.0;
+    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
+    deriv_uptodate = 1;
+  }
 
-  evdwl = 0.0;
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
+  if (eflag && gridflag) {
+    for (i = 0; i < gridsize; i++)
+      evdwlnode[i] = 0.0;
+    grid_uptodate = 1;
+  }
+
+  if (eflag || vflag)
+    ev_setup(eflag,vflag);
+  else
+    evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -115,7 +128,8 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
 
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
-      factor_lj = special_lj[sbmask(j)];
+      intra = sbmask(j);
+      factor_lj = special_lj[intra];
       j &= NEIGHMASK;
 
       delx = xtmp - x[j][0];
@@ -125,10 +139,15 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
       jtype = type[j];
 
       if (rsq < cutsq[itype][jtype]) {
-        r6 = rsq*rsq*rsq;
-        sinv = 1.0/(r6 + asq[itype][jtype]);
-        forcelj = r6*sinv*sinv*(lj1[itype][jtype]*sinv - lj2[itype][jtype]);
-        fpair = factor_lj*forcelj/rsq;
+        r4 = rsq*rsq;
+        r6 = rsq*r4;
+        s6 = r6 + asq[itype][jtype];
+        s6inv = 1.0/s6;
+
+        forcelj = s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
+
+        Ws6inv = efactor*factor_lj*forcelj*s6inv;
+        fpair = Ws6inv*r4;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
@@ -140,33 +159,37 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          evdwl = sinv*(lj3[itype][jtype]*sinv-lj4[itype][jtype]) -
-            offset[itype][jtype];
-          evdwl *= factor_lj;
+          evdwl = factor_lj*(s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
+                  offset[itype][jtype]);
+
+          if (derivflag) {
+            dEdl_ij = diff_efactor*evdwl + bsq[itype][jtype]*Ws6inv;
+            dEdl += (newton_pair || j < nlocal) ? dEdl_ij : 0.5*dEdl_ij;
+          }
+
+          if (gridflag)
+            for (k = 0; k < gridsize; k++) {
+              s6 = r6 + asqn[itype][jtype][k];
+              s6inv = 1.0/s6;
+
+              evdwl = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
+                      offset[itype][jtype];
+              evdwl *= efactorn[k]*factor_lj;
+
+              if (newton_pair || j < nlocal)
+                evdwlnode[k] += evdwl;
+              else
+                evdwlnode[k] += 0.5*evdwl;
+            }
         }
 
-        if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             evdwl,0.0,fpair,delx,dely,delz);
-
-        if (gridflag)
-          for (int k = 0; k < gridsize; k++) {
-            sinv = 1.0/(r6 + asqn[itype][jtype][k]);
-            evdwl = sinv*(lj3n[itype][jtype][k]*sinv-lj4n[itype][jtype][k]) -
-              offsetn[itype][jtype][k];
-            evdwl *= factor_lj;
-            if (newton_pair || j < nlocal)
-              evdwlnode[k] += evdwl;
-            else
-              evdwlnode[k] += 0.5*evdwl;
-          }
+        if (evflag)
+          ev_tally(i,j,nlocal,newton_pair,efactor*evdwl,0.0,fpair,delx,dely,delz);
       }
     }
   }
 
   if (vflag_fdotr) virial_fdotr_compute();
-
-  grid_uptodate = gridflag;
-  gridflag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -175,7 +198,7 @@ void PairLJCutSoftcore::compute_inner()
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,fpair;
-  double rsq,r6,sinv,forcelj,factor_lj,rsw;
+  double rsq,r6,s6inv,forcelj,factor_lj,rsw;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   double **x = atom->x;
@@ -220,9 +243,9 @@ void PairLJCutSoftcore::compute_inner()
 
       if (rsq < cut_out_off_sq) {
         r6 = rsq*rsq*rsq;
-        sinv = 1.0/(r6 + asq[itype][jtype]);
+        s6inv = 1.0/(r6 + asq[itype][jtype]);
         jtype = type[j];
-        forcelj = r6*sinv*sinv*(lj1[itype][jtype]*sinv - lj2[itype][jtype]);
+        forcelj = r6*s6inv*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
         fpair = factor_lj*forcelj/rsq;
         if (rsq > cut_out_on_sq) {
           rsw = (sqrt(rsq) - cut_out_on)/cut_out_diff;
@@ -248,7 +271,7 @@ void PairLJCutSoftcore::compute_middle()
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,fpair;
-  double rsq,r6,sinv,forcelj,factor_lj,rsw;
+  double rsq,r6,s6inv,forcelj,factor_lj,rsw;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   double **x = atom->x;
@@ -298,9 +321,9 @@ void PairLJCutSoftcore::compute_middle()
 
       if (rsq < cut_out_off_sq && rsq > cut_in_off_sq) {
         r6 = rsq*rsq*rsq;
-        sinv = 1.0/(r6 + asq[itype][jtype]);
+        s6inv = 1.0/(r6 + asq[itype][jtype]);
         jtype = type[j];
-        forcelj = r6*sinv*sinv*(lj1[itype][jtype]*sinv - lj2[itype][jtype]);
+        forcelj = r6*s6inv*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
         fpair = factor_lj*forcelj/rsq;
         if (rsq < cut_in_on_sq) {
           rsw = (sqrt(rsq) - cut_in_off)/cut_in_diff;
@@ -330,7 +353,7 @@ void PairLJCutSoftcore::compute_outer(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r6,sinv,forcelj,factor_lj,rsw;
+  double rsq,r6,s6inv,forcelj,factor_lj,rsw;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   if (gridflag) for (i = 0; i < gridsize; i++) evdwlnode[i] = 0.0;
@@ -383,8 +406,8 @@ void PairLJCutSoftcore::compute_outer(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         if (rsq > cut_in_off_sq) {
           r6 = rsq*rsq*rsq;
-          sinv = 1.0/(r6 + asq[itype][jtype]);
-          forcelj = r6*sinv*sinv*(lj1[itype][jtype]*sinv - lj2[itype][jtype]);
+          s6inv = 1.0/(r6 + asq[itype][jtype]);
+          forcelj = r6*s6inv*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
           fpair = factor_lj*forcelj/rsq;
           if (rsq < cut_in_on_sq) {
             rsw = (sqrt(rsq) - cut_in_off)/cut_in_diff;
@@ -403,8 +426,8 @@ void PairLJCutSoftcore::compute_outer(int eflag, int vflag)
 
         if (eflag) {
           r6 = rsq*rsq*rsq;
-          sinv = 1.0/(r6 + asq[itype][jtype]);
-          evdwl = sinv*(lj3[itype][jtype]*sinv-lj4[itype][jtype]) -
+          s6inv = 1.0/(r6 + asq[itype][jtype]);
+          evdwl = s6inv*(lj3[itype][jtype]*s6inv-lj4[itype][jtype]) -
             offset[itype][jtype];
           evdwl *= factor_lj;
         }
@@ -412,8 +435,8 @@ void PairLJCutSoftcore::compute_outer(int eflag, int vflag)
         if (vflag) {
           if (rsq <= cut_in_off_sq) {
             r6 = rsq*rsq*rsq;
-            sinv = 1.0/(r6 + asq[itype][jtype]);
-            forcelj = r6*sinv*sinv*(lj1[itype][jtype]*sinv - lj2[itype][jtype]);
+            s6inv = 1.0/(r6 + asq[itype][jtype]);
+            forcelj = r6*s6inv*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
             fpair = factor_lj*forcelj/rsq;
           } else if (rsq < cut_in_on_sq)
             fpair = factor_lj*forcelj/rsq;
@@ -424,10 +447,10 @@ void PairLJCutSoftcore::compute_outer(int eflag, int vflag)
 
         if (gridflag)
           for (int k = 0; k < gridsize; k++) {
-            sinv = 1.0/(r6 + asqn[itype][jtype][k]);
-            evdwl = sinv*(lj3n[itype][jtype][k]*sinv-lj4n[itype][jtype][k]) -
-              offsetn[itype][jtype][k];
-            evdwl *= factor_lj;
+            s6inv = 1.0/(r6 + asqn[itype][jtype][k]);
+            evdwl = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
+                    offset[itype][jtype];
+            evdwl *= efactorn[k]*factor_lj;
             if (newton_pair || j < nlocal)
               evdwlnode[k] += evdwl;
             else
@@ -454,22 +477,19 @@ void PairLJCutSoftcore::allocate()
 
   memory->create(cutsq,n+1,n+1,"pair:cutsq");
 
-  memory->create(cut,n+1,n+1,"pair:cut");
+  memory->create(cut_lj,n+1,n+1,"pair:cut");
   memory->create(epsilon,n+1,n+1,"pair:epsilon");
   memory->create(sigma,n+1,n+1,"pair:sigma");
   memory->create(lj1,n+1,n+1,"pair:lj1");
   memory->create(lj2,n+1,n+1,"pair:lj2");
   memory->create(lj3,n+1,n+1,"pair:lj3");
   memory->create(lj4,n+1,n+1,"pair:lj4");
-  memory->create(lj5,n+1,n+1,"pair:lj5");
-  memory->create(lj6,n+1,n+1,"pair:lj6");
   memory->create(offset,n+1,n+1,"pair:offset");
 
   memory->create(asq,n+1,n+1,"pair:asq");
-  memory->create(lj3n,n+1,n+1,gridsize,"pair:lj3n");
-  memory->create(lj4n,n+1,n+1,gridsize,"pair:lj4n");
+  memory->create(bsq,n+1,n+1,"pair:bsq");
+  memory->create(efactorn,gridsize,"pair:efactorn");
   memory->create(asqn,n+1,n+1,gridsize,"pair:asqn");
-  memory->create(offsetn,n+1,n+1,gridsize,"pair:offsetn");
 }
 
 /* ----------------------------------------------------------------------
@@ -480,7 +500,7 @@ void PairLJCutSoftcore::settings(int narg, char **arg)
 {
   if (narg != 1) error->all(FLERR,"Illegal pair_style command");
 
-  cut_global = force->numeric(FLERR,arg[0]);
+  cut_lj_global = force->numeric(FLERR,arg[0]);
 
   // reset cutoffs that have been explicitly set
 
@@ -488,7 +508,8 @@ void PairLJCutSoftcore::settings(int narg, char **arg)
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
       for (j = i; j <= atom->ntypes; j++)
-        if (setflag[i][j]) cut[i][j] = cut_global;
+        if (setflag[i][j])
+          cut_lj[i][j] = cut_lj_global;
   }
 }
 
@@ -509,7 +530,7 @@ void PairLJCutSoftcore::coeff(int narg, char **arg)
   double epsilon_one = force->numeric(FLERR,arg[2]);
   double sigma_one = force->numeric(FLERR,arg[3]);
 
-  double cut_one = cut_global;
+  double cut_one = cut_lj_global;
   if (narg == 5) cut_one = force->numeric(FLERR,arg[4]);
 
   int count = 0;
@@ -517,7 +538,7 @@ void PairLJCutSoftcore::coeff(int narg, char **arg)
     for (int j = MAX(jlo,i); j <= jhi; j++) {
       epsilon[i][j] = epsilon_one;
       sigma[i][j] = sigma_one;
-      cut[i][j] = cut_one;
+      cut_lj[i][j] = cut_one;
       setflag[i][j] = 1;
       count++;
     }
@@ -570,30 +591,39 @@ void PairLJCutSoftcore::init_style()
     cut_respa = ((Respa *) update->integrate)->cutoff;
   else cut_respa = NULL;
 
-  PairAlchemical::init_style();
-
   int n = atom->ntypes;
-  memory->grow(lj3n,n+1,n+1,gridsize,"pair:lj3n");
-  memory->grow(lj4n,n+1,n+1,gridsize,"pair:lj4n");
+  memory->grow(efactorn,gridsize,"pair:efactorn");
   memory->grow(asqn,n+1,n+1,gridsize,"pair:asqn");
-  memory->grow(offsetn,n+1,n+1,gridsize,"pair:offsetn");
 
   double save = lambda;
   for (int k = 0; k < gridsize; k++) {
     lambda = lambdanode[k];
+    efactorn[k] = efactor = pow(lambda, exponent_n);
     etailnode[k] = 0.0;
     for (int i = 1; i <= n; i++)
       for (int j = i; j <= n; j++)
         if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
           init_one(i,j);
-          lj3n[i][j][k] = lj3n[j][i][k] = lj3[i][j];
-          lj4n[i][j][k] = lj4n[j][i][k] = lj4[i][j];
           asqn[i][j][k] = asqn[j][i][k] = asq[i][j];
-          offsetn[i][j][k] = offsetn[j][i][k] = offset[i][j];
-          if (tail_flag) etailnode[k] += (i == j ? 1.0 : 2.0)*etail_ij;
+          if (tail_flag)
+            etailnode[k] += i == j ? etail_ij : 2.0*etail_ij;
         }
   }
+
   lambda = save;
+  efactor = pow(lambda, exponent_n);
+
+  if (tail_flag) {
+    detaildl = 0.0;
+    for (int i = 1; i <= n; i++)
+      for (int j = i; j <= n; j++)
+        if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
+          init_one(i,j);
+          detaildl += i == j ? detaildl_ij : 2.0*detaildl_ij;
+        }
+  }
+
+  PairAlchemical::init_style();
 }
 
 /* ----------------------------------------------------------------------
@@ -637,34 +667,32 @@ double PairLJCutSoftcore::init_one(int i, int j)
     epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],
                                sigma[i][i],sigma[j][j]);
     sigma[i][j] = mix_distance(sigma[i][i],sigma[j][j]);
-    cut[i][j] = mix_distance(cut[i][i],cut[j][j]);
+    cut_lj[i][j] = mix_distance(cut_lj[i][i],cut_lj[j][j]);
   }
 
-  double rc = cut[i][j];
+  double rc = cut_lj[i][j];
   double rc3 = rc*rc*rc;
   double rc6 = rc3*rc3;
   double sig2 = sigma[i][j]*sigma[i][j];
   double sig6 = sig2*sig2*sig2;
   double sig12 = sig6*sig6;
   double eps4 = 4.0 * epsilon[i][j];
-  double efactor = eps4 * pow(lambda,exponent_n);
 
-  lj5[i][j] = lj5[j][i] = eps4 * sig12;
-  lj6[i][j] = lj6[j][i] = eps4 * sig6;
-  lj3[i][j] = lj3[j][i] = efactor * sig12;
-  lj4[i][j] = lj4[j][i] = efactor * sig6;
+  lj3[i][j] = lj3[j][i] = eps4 * sig12;
+  lj4[i][j] = lj4[j][i] = eps4 * sig6;
   lj1[i][j] = lj1[j][i] = 12.0 * lj3[i][j];
   lj2[i][j] = lj2[j][i] =  6.0 * lj4[i][j];
   asq[i][j] = asq[j][i] = alpha*sig6*pow(1.0 - lambda,exponent_p);
+  bsq[i][j] = bsq[j][i] = exponent_p*alpha*sig6*pow(1.0 - lambda,exponent_p - 1.0)/6.0;
 
-  if (offset_flag && (cut[i][j] > 0.0)) {
+  if (offset_flag && (rc > 0.0)) {
     double rc6inv = 1.0/(rc6 + asq[i][j]);
     offset[i][j] = offset[j][i] = rc6inv*(lj3[i][j]*rc6inv - lj4[i][j]);
   } else offset[i][j] = 0.0;
 
   // check interior rRESPA cutoff
 
-  if (cut_respa && cut[i][j] < cut_respa[3])
+  if (cut_respa && rc < cut_respa[3])
     error->all(FLERR,"Pair cutoff < Respa interior cutoff");
 
   // compute I,J contribution to long-range tail correction
@@ -683,9 +711,12 @@ double PairLJCutSoftcore::init_one(int i, int j)
     MPI_Allreduce(count,all,2,MPI_DOUBLE,MPI_SUM,world);
 
     double TwoPiNiNj = 2.0*MY_PI*all[0]*all[1];
-    double fe, ge, fw, gw;
-    if (asq[i][j] == 0.0)
+    double fe, ge, fw, gw, dfedx_x, dgedx_x;
+    if (asq[i][j] == 0.0) {
       fe = ge = fw = gw = 1.0;
+      dfedx_x = -2.0/3.0;
+      dgedx_x = -12.0/5.0;
+    }
     else {
       double x = sqrt(asq[i][j])/rc3;
       double x2 = x*x;
@@ -694,14 +725,55 @@ double PairLJCutSoftcore::init_one(int i, int j)
       ge = 1.5*(fe - y)/x2;
       fw = 0.5*(fe + y);
       gw = 0.75*(fw - y*y)/x2;
+      dfedx_x = -2.0*ge/3.0;
+      dgedx_x = 3.0*(y*y - ge)/x2;
     }
-    double b6 = efactor*sig6/(3.0*rc3);
+    double xdxdl = 3.0*bsq[i][j]/rc6;
+    double b6 = eps4*sig6/(3.0*rc3);
     double b12 = b6*sig6/(3.0*rc6);
     etail_ij = TwoPiNiNj*(b12*ge - b6*fe);
     ptail_ij = TwoPiNiNj*(4.0*b12*gw - 2.0*b6*fw);
+    detaildl_ij = exponent_n*pow(lambda,exponent_n - 1.0)*etail_ij +
+                  efactor*TwoPiNiNj*(b12*dgedx_x - b6*dfedx_x)*xdxdl;
+    etail_ij *= efactor;
+    ptail_ij *= efactor;
   }
 
-  return cut[i][j];
+  return rc;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void PairLJCutSoftcore::modify_params(int narg, char **arg)
+{
+  if (narg == 0)
+    error->all(FLERR,"Illegal pair_modify command");
+
+  int iarg, ns, skip[narg];
+  iarg = ns = 0;
+  while (iarg < narg) {
+    if (strcmp(arg[iarg],"self") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal pair_modify command");
+      if (strcmp(arg[iarg+1],"yes") == 0)
+        self_flag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0)
+        self_flag = 0;
+      else
+        error->all(FLERR,"Illegal pair_modify command");
+      single_enable = !self_flag;
+      iarg += 2;
+    }
+    else // no keyword found - skip argument:
+      skip[ns++] = iarg++;
+  }
+
+  // Call parent-class routine with skipped arguments:
+  if (ns > 0) {
+    for (int i = 0; i < ns; i++)
+      arg[i] = arg[skip[i]];
+    PairAlchemical::modify_params(ns, arg);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -720,7 +792,7 @@ void PairLJCutSoftcore::write_restart(FILE *fp)
       if (setflag[i][j]) {
         fwrite(&epsilon[i][j],sizeof(double),1,fp);
         fwrite(&sigma[i][j],sizeof(double),1,fp);
-        fwrite(&cut[i][j],sizeof(double),1,fp);
+        fwrite(&cut_lj[i][j],sizeof(double),1,fp);
       }
     }
 }
@@ -745,11 +817,11 @@ void PairLJCutSoftcore::read_restart(FILE *fp)
         if (me == 0) {
           fread(&epsilon[i][j],sizeof(double),1,fp);
           fread(&sigma[i][j],sizeof(double),1,fp);
-          fread(&cut[i][j],sizeof(double),1,fp);
+          fread(&cut_lj[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&sigma[i][j],1,MPI_DOUBLE,0,world);
-        MPI_Bcast(&cut[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&cut_lj[i][j],1,MPI_DOUBLE,0,world);
       }
     }
 }
@@ -760,7 +832,7 @@ void PairLJCutSoftcore::read_restart(FILE *fp)
 
 void PairLJCutSoftcore::write_restart_settings(FILE *fp)
 {
-  fwrite(&cut_global,sizeof(double),1,fp);
+  fwrite(&cut_lj_global,sizeof(double),1,fp);
   fwrite(&offset_flag,sizeof(int),1,fp);
   fwrite(&mix_flag,sizeof(int),1,fp);
   fwrite(&tail_flag,sizeof(int),1,fp);
@@ -774,12 +846,12 @@ void PairLJCutSoftcore::read_restart_settings(FILE *fp)
 {
   int me = comm->me;
   if (me == 0) {
-    fread(&cut_global,sizeof(double),1,fp);
+    fread(&cut_lj_global,sizeof(double),1,fp);
     fread(&offset_flag,sizeof(int),1,fp);
     fread(&mix_flag,sizeof(int),1,fp);
     fread(&tail_flag,sizeof(int),1,fp);
   }
-  MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
+  MPI_Bcast(&cut_lj_global,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
   MPI_Bcast(&mix_flag,1,MPI_INT,0,world);
   MPI_Bcast(&tail_flag,1,MPI_INT,0,world);
@@ -803,25 +875,28 @@ void PairLJCutSoftcore::write_data_all(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
     for (int j = i; j <= atom->ntypes; j++)
-      fprintf(fp,"%d %d %g %g %g\n",i,j,epsilon[i][j],sigma[i][j],cut[i][j]);
+      fprintf(fp,"%d %d %g %g %g\n",i,j,epsilon[i][j],sigma[i][j],cut_lj[i][j]);
 }
 
 /* ---------------------------------------------------------------------- */
 
 double PairLJCutSoftcore::single(int i, int j, int itype, int jtype, double rsq,
-                         double factor_coul, double factor_lj,
-                         double &fforce)
+                                           double factor_coul, double factor_lj,
+                                           double &fforce)
 {
-  double r6,sinv,forcelj,philj;
+  double r4,s6,s6inv,forcelj,philj;
+  double s,vs,fs,prefactor;
 
-  r6 = rsq*rsq*rsq;
-  sinv = 1.0/(r6 + asq[itype][jtype]);
-  forcelj = r6*sinv*sinv*(lj1[itype][jtype]*sinv - lj2[itype][jtype]);
-  fforce = factor_lj*forcelj/rsq;
+  r4 = rsq*rsq;
+  s6 = rsq*r4 + asq[itype][jtype];
+  s6inv = 1.0/s6;
+  forcelj = s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
 
-  philj = sinv*(lj3[itype][jtype]*sinv-lj4[itype][jtype]) -
-    offset[itype][jtype];
-  return factor_lj*philj;
+  fforce = efactor*factor_lj*forcelj*r4*s6inv;
+
+  philj = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) - offset[itype][jtype];
+
+  return efactor*factor_lj*philj;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -835,66 +910,3 @@ void *PairLJCutSoftcore::extract(const char *str, int &dim)
 }
 
 /* ---------------------------------------------------------------------- */
-
-// NOTE: This derivative considers both exponent_n = 1 and exponent_p = 1
-
-double PairLJCutSoftcore::derivative()
-{
-  int i,j,k,ii,jj,inum,jnum,itype,jtype;
-  double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r6,sinv,factor_lj;
-  int *ilist,*jlist,*numneigh,**firstneigh;
-
-  double **x = atom->x;
-  int *type = atom->type;
-  int nlocal = atom->nlocal;
-  double *special_lj = force->special_lj;
-  int newton_pair = force->newton_pair;
-
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  firstneigh = list->firstneigh;
-
-  // loop over neighbors of my atoms
-
-  double C = alpha*lambda;
-  double dEdl = 0.0;
-
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
-    itype = type[i];
-    jlist = firstneigh[i];
-    jnum = numneigh[i];
-
-    for (jj = 0; jj < jnum; jj++) {
-      j = jlist[jj];
-      factor_lj = special_lj[sbmask(j)];
-      j &= NEIGHMASK;
-
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
-      delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
-      jtype = type[j];
-
-      if (rsq < cutsq[itype][jtype]) {
-        r6 = rsq*rsq*rsq;
-        sinv = 1.0/(r6 + asq[itype][jtype]);
-        evdwl = factor_lj*sinv*(lj5[itype][jtype]*sinv - lj6[itype][jtype]);
-        if (newton_pair)
-          dEdl += evdwl*(1.0 + C*sinv);
-        else
-          dEdl += 0.5*evdwl*(1.0 + C*sinv);
-      }
-    }
-  }
-
-  return dEdl;
-}
-
-/* ---------------------------------------------------------------------- */
-

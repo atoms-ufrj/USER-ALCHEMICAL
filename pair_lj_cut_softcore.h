@@ -5,7 +5,7 @@
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
    DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
-   certain rights in this software.  This software is distributed under
+   certain rights in this software.  This software is distributed under 
    the GNU General Public License.
 
    See the README file in the top-level LAMMPS directory.
@@ -22,18 +22,27 @@ PairStyle(lj/cut/softcore,PairLJCutSoftcore)
 
 #include "pair_alchemical.h"
 
+#define EWALD_P   0.3275911
+#define EWALD_F   1.128379167
+#define A_1       0.254829592
+#define A_2      -0.284496736
+#define A_3       1.421413741
+#define A_4      -1.453152027
+#define A_5       1.061405429
+
 namespace LAMMPS_NS {
 
 class PairLJCutSoftcore : public PairAlchemical {
  public:
   PairLJCutSoftcore(class LAMMPS *);
-  virtual ~PairLJCutSoftcore();
-  virtual void compute(int, int);
+  ~PairLJCutSoftcore();
+  void compute(int, int);
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
   void init_list(int, class NeighList *);
   double init_one(int, int);
+  void modify_params(int, char **);
   void write_restart(FILE *);
   void read_restart(FILE *);
   void write_restart_settings(FILE *);
@@ -48,20 +57,35 @@ class PairLJCutSoftcore : public PairAlchemical {
   void compute_outer(int, int);
 
  protected:
-  double cut_global;
-  double **cut;
+  double cut_lj_global;
+  double **cut_lj;
   double **epsilon,**sigma;
   double **lj1,**lj2,**lj3,**lj4,**offset;
   double *cut_respa;
 
-  virtual void allocate();
-
   double **asq;
-  double ***lj3n,***lj4n,***asqn,***offsetn;
+  double *efactorn,***asqn;
   double atanx_x(double x);
 
-  double **lj5,**lj6;
-  double derivative();
+  double cut_coul,cut_coulsq;
+  double alphaC;
+  double f_shift,e_shift;
+  double e_self;
+  int self_flag;
+
+  virtual void allocate();
+
+  double detaildl_ij;
+  double **bsq;
+
+  inline void unshifted( double r, double &v, double &f )
+  {
+    double ar = alphaC*r;
+    f = exp(-ar*ar)/r;
+    v = 1.0 / (1.0 + EWALD_P*ar);
+    v *= (A_1 + v*(A_2 + v*(A_3 + v*(A_4 + v*A_5))))*f;
+    f = v/r + EWALD_F*alphaC*f;
+  }
 };
 
 }
@@ -81,9 +105,8 @@ E: Incorrect args for pair coefficients
 
 Self-explanatory.  Check the input script or data file.
 
-E: Pair cutoff < Respa interior cutoff
+E: Pair style lj/cut/coul/dsf requires atom attribute q
 
-One or more pairwise cutoffs are too short to use with the specified
-rRESPA cutoffs.
+The atom style defined does not have these attributes.
 
 */

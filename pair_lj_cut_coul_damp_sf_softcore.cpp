@@ -201,7 +201,7 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
 
           if (derivflag) {
             dEdl_ij = diff_efactor*(evdwl + ecoul) + bsq[itype][jtype]*Ws6inv;
-            dEdl += (newton_pair || j < nlocal ? dEdl_ij : 0.5*dEdl_ij);
+            dEdl += (newton_pair || j < nlocal) ? dEdl_ij : 0.5*dEdl_ij;
           }
 
           if (gridflag)
