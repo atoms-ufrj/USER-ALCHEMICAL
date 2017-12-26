@@ -100,7 +100,6 @@ void PairAlchemical::add_node_to_grid(double lambda_value)
   memory->grow(lambdanode,gridsize,"pair_softcore:lambdanode");
   memory->grow(evdwlnode,gridsize,"pair_softcore:evdwlnode");
   memory->grow(ecoulnode,gridsize,"pair_softcore:ecoulnode");
-  memory->grow(ecoulnode,gridsize,"pair_softcore:ecoulnode");
   memory->grow(etailnode,gridsize,"pair_softcore:etailnode");
 
   j = 0;
@@ -111,6 +110,7 @@ void PairAlchemical::add_node_to_grid(double lambda_value)
     } else
       lambdanode[i+1] = backup[i];
   lambdanode[j] = lambda_value;
+  evdwlnode[j] = ecoulnode[j] = etailnode[j] = 0.0;
   delete [] backup;
 }
 

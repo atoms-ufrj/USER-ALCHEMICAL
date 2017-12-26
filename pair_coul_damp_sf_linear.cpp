@@ -49,12 +49,21 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype,intra;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vr,fr,ecoul,fpair;
-  double r,rsq,r2inv,r6inv,prefactor,forcecoul,factor_coul;
+  double r,rsq,r2inv,r6inv,prefactor,forcecoul,factor_coul,diff_efactor;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  if (gridflag) for (i = 0; i < gridsize; i++) ecoulnode[i] = 0.0;
+  if (eflag && derivflag) {
+    dEdl = 0.0;
+    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
+    deriv_uptodate = 1;
+  }
 
-  ecoul = dEdl = 0.0;
+  if (eflag && gridflag) {
+    for (i = 0; i < gridsize; i++)
+      ecoulnode[i] = 0.0;
+    grid_uptodate = 1;
+  }
+
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
 
@@ -105,11 +114,15 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
         r2inv = 1.0/rsq;
 
         prefactor = qtmp*q[j];
-        r = sqrt(rsq);
-        unshifted( r, vr, fr );
-        forcecoul = prefactor*(fr - f_shift)*r;
+        if (intra)
+          forcecoul = prefactor*sqrt(r2inv);
+        else {
+          r = sqrt(rsq);
+          unshifted( r, vr, fr );
+          forcecoul = prefactor*(fr - f_shift)*r;
+        }
 
-        fpair = forcecoul*lambda*r2inv;
+        fpair = efactor*forcecoul*r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -120,28 +133,28 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          ecoul = prefactor*(vr + r*f_shift - e_shift);
-          dEdl += ecoul;
+          ecoul = intra ? forcecoul : prefactor*(vr + r*f_shift - e_shift);
+
+          if (derivflag)
+            dEdl += diff_efactor*ecoul;
+
+          if (gridflag) {
+            for (int k = 0; k < gridsize; k++)
+              if (newton_pair || j < nlocal)
+                ecoulnode[k] += lambdanode[k]*ecoul;
+              else
+                ecoulnode[k] += 0.5*lambdanode[k]*ecoul;
+          }
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             0.0,lambda*ecoul,fpair,delx,dely,delz);
+                             0.0,efactor*ecoul,fpair,delx,dely,delz);
 
-        if (gridflag) {
-          for (int k = 0; k < gridsize; k++)
-            if (newton_pair || j < nlocal)
-              ecoulnode[k] += lambdanode[k]*ecoul;
-            else
-              ecoulnode[k] += 0.5*lambdanode[k]*ecoul;
-        }
       }
     }
   }
 
   if (vflag_fdotr) virial_fdotr_compute();
-
-  grid_uptodate = gridflag;
-//  gridflag = 0;
 }
 
 /* ----------------------------------------------------------------------
@@ -363,11 +376,4 @@ void *PairCoulDampSFLinear::extract(const char *str, int &dim)
     return (void *) &cut_coul;
   }
   return NULL;
-}
-
-/* ---------------------------------------------------------------------- */
-
-double PairCoulDampSFLinear::derivative()
-{
-  return dEdl;
 }

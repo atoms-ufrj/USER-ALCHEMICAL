@@ -24,11 +24,11 @@ PairStyle(coul/damp/sf/linear,PairCoulDampSFLinear)
 
 #define EWALD_P   0.3275911
 #define EWALD_F   1.128379167
-#define A_1        0.254829592
-#define A_2       -0.284496736
-#define A_3        1.421413741
-#define A_4       -1.453152027
-#define A_5        1.061405429
+#define A_1       0.254829592
+#define A_2      -0.284496736
+#define A_3       1.421413741
+#define A_4      -1.453152027
+#define A_5       1.061405429
 
 namespace LAMMPS_NS {
 
@@ -49,7 +49,6 @@ class PairCoulDampSFLinear : public PairAlchemical {
   void read_restart_settings(FILE *);
   double single(int, int, int, int, double, double, double, double &);
   void *extract(const char *, int &);
-  double derivative();
 
  protected:
   double cut_lj_global;
@@ -62,7 +61,6 @@ class PairCoulDampSFLinear : public PairAlchemical {
   double f_shift,e_shift;
   double e_self;
   int self_flag;
-  double dEdl;
 
   virtual void allocate();
 
