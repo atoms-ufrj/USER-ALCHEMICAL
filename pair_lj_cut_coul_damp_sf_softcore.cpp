@@ -86,7 +86,7 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
   int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,ecoul,Ws6inv,fpair;
   double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
-  double dEdl_ij,diff_efactor;
+  double dEdl_ij,diff_efactor,evdwlk,ecoulk;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   if (eflag && derivflag) {
@@ -157,12 +157,14 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
         s6 = r6 + asq[itype][jtype];
         s6inv = 1.0/s6;
 
-        if (rsq < cut_ljsq[itype][jtype])
-          forcelj = s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
+        int lennard_jones = rsq < cut_ljsq[itype][jtype];
+        if (lennard_jones)
+          forcelj = factor_lj*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
         else
           forcelj = 0.0;
 
-        if (rsq < cut_coulsq) {
+        int coulomb = rsq < cut_coulsq;
+        if (coulomb) {
           prefactor = factor_coul*qtmp*q[j];
           if (intra)
             forcecoul = prefactor*sixthroot(s6inv);
@@ -175,33 +177,35 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
         else
           forcecoul = 0.0;
 
-        Ws6inv = efactor*(factor_lj*forcelj + forcecoul)*s6inv;
+        Ws6inv = efactor*(forcelj + forcecoul)*s6inv;
         fpair = Ws6inv*r4;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
-        if (newton_pair || j < nlocal) {
+
+        int newton = newton_pair || j < nlocal;
+        if (newton) {
           f[j][0] -= delx*fpair;
           f[j][1] -= dely*fpair;
           f[j][2] -= delz*fpair;
         }
 
         if (eflag) {
-          if (rsq < cut_ljsq[itype][jtype])
+          if (lennard_jones)
             evdwl = factor_lj*(s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
-                    offset[itype][jtype]);
+                               offset[itype][jtype]);
           else
             evdwl = 0.0;
 
-          if (rsq < cut_coulsq)
+          if (coulomb)
             ecoul = intra ? forcecoul : prefactor*(vs + s*f_shift - e_shift);
           else
             ecoul = 0.0;
 
           if (derivflag) {
             dEdl_ij = diff_efactor*(evdwl + ecoul) + bsq[itype][jtype]*Ws6inv;
-            dEdl += (newton_pair || j < nlocal) ? dEdl_ij : 0.5*dEdl_ij;
+            dEdl += newton ? dEdl_ij : 0.5*dEdl_ij;
           }
 
           if (gridflag)
@@ -209,26 +213,21 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
               s6 = r6 + asqn[itype][jtype][k];
               s6inv = 1.0/s6;
 
-              evdwl = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
-                      offset[itype][jtype];
-              evdwl *= efactorn[k]*factor_lj;
-
-              if (intra)
-                ecoul = sixthroot(s6inv);
-              else {
-                s = sixthroot(s6);
-                unshifted( s, vs, fs );
-                ecoul = vs + s*f_shift - e_shift;
+              if (lennard_jones) {
+                evdwlk = factor_lj*(s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
+                                    offset[itype][jtype]);
+                evdwlnode[k] += newton ? evdwlk : 0.5*evdwlk;
               }
-              ecoul *= efactorn[k]*prefactor;
 
-              if (newton_pair || j < nlocal) {
-                evdwlnode[k] += evdwl;
-                ecoulnode[k] += ecoul;
-              }
-              else {
-                evdwlnode[k] += 0.5*evdwl;
-                ecoulnode[k] += 0.5*ecoul;
+              if (coulomb) {
+                if (intra)
+                  ecoulk = prefactor*sixthroot(s6inv);
+                else {
+                  s = sixthroot(s6);
+                  unshifted( s, vs, fs );
+                  ecoulk = prefactor*(vs + s*f_shift - e_shift);
+                }
+                ecoulnode[k] += newton ? ecoulk : 0.5*ecoulk;
               }
             }
         }
@@ -238,6 +237,12 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
       }
     }
   }
+
+  if (eflag && gridflag)
+    for (k = 0; k < gridsize; k++) {
+      evdwlnode[k] *= efactorn[k];
+      ecoulnode[k] *= efactorn[k];
+    }
 
   if (vflag_fdotr) virial_fdotr_compute();
 }
@@ -729,8 +734,7 @@ double PairLJCutCoulDampSFSoftcore::atanx_x(double x)
 double PairLJCutCoulDampSFSoftcore::init_one(int i, int j)
 {
   if (setflag[i][j] == 0) {
-    epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],
-                               sigma[i][i],sigma[j][j]);
+    epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],sigma[i][i],sigma[j][j]);
     sigma[i][j] = mix_distance(sigma[i][i],sigma[j][j]);
     cut_lj[i][j] = mix_distance(cut_lj[i][i],cut_lj[j][j]);
   }
