@@ -86,20 +86,17 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
   int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,ecoul,Ws6inv,fpair;
   double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
-  double dEdl_ij,diff_efactor,evdwlk,ecoulk;
+  double dEdl_ij,evdwlk,ecoulk;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  if (eflag && derivflag) {
+  deriv_uptodate = eflag && derivflag;
+  if (deriv_uptodate)
     dEdl = 0.0;
-    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
-    deriv_uptodate = 1;
-  }
 
-  if (eflag && gridflag) {
+  grid_uptodate = eflag && gridflag;
+  if (grid_uptodate)
     for (i = 0; i < gridsize; i++)
       evdwlnode[i] = ecoulnode[i] = 0.0;
-    grid_uptodate = 1;
-  }
 
   if (eflag || vflag)
     ev_setup(eflag,vflag);
@@ -238,7 +235,7 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
     }
   }
 
-  if (eflag && gridflag)
+  if (grid_uptodate)
     for (k = 0; k < gridsize; k++) {
       evdwlnode[k] *= efactorn[k];
       ecoulnode[k] *= efactorn[k];
@@ -669,6 +666,7 @@ void PairLJCutCoulDampSFSoftcore::init_style()
   for (int k = 0; k < gridsize; k++) {
     lambda = lambdanode[k];
     efactorn[k] = efactor = pow(lambda, exponent_n);
+    diff_efactor = exponent_n*pow(lambda, exponent_n - 1.0);
     etailnode[k] = 0.0;
     for (int i = 1; i <= n; i++)
       for (int j = i; j <= n; j++)
@@ -682,16 +680,15 @@ void PairLJCutCoulDampSFSoftcore::init_style()
 
   lambda = save;
   efactor = pow(lambda, exponent_n);
-
-  if (tail_flag) {
-    detaildl = 0.0;
-    for (int i = 1; i <= n; i++)
-      for (int j = i; j <= n; j++)
-        if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
-          init_one(i,j);
+  diff_efactor = exponent_n*pow(lambda, exponent_n - 1.0);
+  detaildl = 0.0;
+  for (int i = 1; i <= n; i++)
+    for (int j = i; j <= n; j++)
+      if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
+        init_one(i,j);
+        if (tail_flag)
           detaildl += i == j ? detaildl_ij : 2.0*detaildl_ij;
-        }
-  }
+      }
 
   PairAlchemical::init_style();
 }
@@ -803,8 +800,7 @@ double PairLJCutCoulDampSFSoftcore::init_one(int i, int j)
     double b12 = b6*sig6/(3.0*rc6);
     etail_ij = TwoPiNiNj*(b12*ge - b6*fe);
     ptail_ij = TwoPiNiNj*(4.0*b12*gw - 2.0*b6*fw);
-    detaildl_ij = exponent_n*pow(lambda,exponent_n - 1.0)*etail_ij +
-                  efactor*TwoPiNiNj*(b12*dgedx_x - b6*dfedx_x)*xdxdl;
+    detaildl_ij = diff_efactor*etail_ij + efactor*TwoPiNiNj*(b12*dgedx_x - b6*dfedx_x)*xdxdl;
     etail_ij *= efactor;
     ptail_ij *= efactor;
   }

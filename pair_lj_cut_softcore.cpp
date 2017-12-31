@@ -88,7 +88,6 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
 
   if (eflag && derivflag) {
     dEdl = 0.0;
-    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
     deriv_uptodate = 1;
   }
 
@@ -599,6 +598,7 @@ void PairLJCutSoftcore::init_style()
   for (int k = 0; k < gridsize; k++) {
     lambda = lambdanode[k];
     efactorn[k] = efactor = pow(lambda, exponent_n);
+    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
     etailnode[k] = 0.0;
     for (int i = 1; i <= n; i++)
       for (int j = i; j <= n; j++)
@@ -612,6 +612,7 @@ void PairLJCutSoftcore::init_style()
 
   lambda = save;
   efactor = pow(lambda, exponent_n);
+  diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
 
   if (tail_flag) {
     detaildl = 0.0;
@@ -733,8 +734,7 @@ double PairLJCutSoftcore::init_one(int i, int j)
     double b12 = b6*sig6/(3.0*rc6);
     etail_ij = TwoPiNiNj*(b12*ge - b6*fe);
     ptail_ij = TwoPiNiNj*(4.0*b12*gw - 2.0*b6*fw);
-    detaildl_ij = exponent_n*pow(lambda,exponent_n - 1.0)*etail_ij +
-                  efactor*TwoPiNiNj*(b12*dgedx_x - b6*dfedx_x)*xdxdl;
+    detaildl_ij = diff_efactor*etail_ij + efactor*TwoPiNiNj*(b12*dgedx_x - b6*dfedx_x)*xdxdl;
     etail_ij *= efactor;
     ptail_ij *= efactor;
   }

@@ -21,11 +21,11 @@ PairStyle(hybrid/softcore,PairHybridSoftcore)
 #define LMP_PAIR_HYBRID_SOFTCORE_H
 
 #include <stdio.h>
-#include "pair_hybrid.h"
+#include "pair_hybrid_overlay.h"
 
 namespace LAMMPS_NS {
 
-class PairHybridSoftcore : public PairHybrid {
+class PairHybridSoftcore : public PairHybridOverlay {
  friend class FixSoftcoreEE;
  friend class ComputeSoftcoreGrid;
  friend class ComputeSoftcoreDerivative;

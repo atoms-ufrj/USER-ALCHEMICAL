@@ -20,7 +20,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-PairHybridSoftcore::PairHybridSoftcore(LAMMPS *lmp) : PairHybrid(lmp)
+PairHybridSoftcore::PairHybridSoftcore(LAMMPS *lmp) : PairHybridOverlay(lmp)
 {
 }
 

@@ -154,6 +154,7 @@ void PairAlchemical::modify_params(int narg, char **arg)
         lambda = value;
       }
       efactor = pow(lambda, exponent_n);
+      diff_efactor = exponent_n*pow(lambda, exponent_n - 1.0);
       iarg += 2;
     }
     else if (m == 4) { // set_grid:
