@@ -53,7 +53,7 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   if (eflag && derivflag) {
-    dEdl = 0.0;
+    dEdl_coul = 0.0;
     diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
     deriv_uptodate = 1;
   }
@@ -136,7 +136,7 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
           ecoul = intra ? forcecoul : prefactor*(vr + r*f_shift - e_shift);
 
           if (derivflag)
-            dEdl += diff_efactor*ecoul;
+            dEdl_coul += diff_efactor*ecoul;
 
           if (gridflag) {
             for (int k = 0; k < gridsize; k++)

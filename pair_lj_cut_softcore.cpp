@@ -83,11 +83,11 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
   int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,Ws6inv,fpair;
   double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,factor_lj;
-  double dEdl_ij,diff_efactor;
+  double dEdl_vdwl_ij,diff_efactor;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   if (eflag && derivflag) {
-    dEdl = 0.0;
+    dEdl_vdwl = 0.0;
     deriv_uptodate = 1;
   }
 
@@ -162,8 +162,8 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
                   offset[itype][jtype]);
 
           if (derivflag) {
-            dEdl_ij = diff_efactor*evdwl + bsq[itype][jtype]*Ws6inv;
-            dEdl += (newton_pair || j < nlocal) ? dEdl_ij : 0.5*dEdl_ij;
+            dEdl_vdwl_ij = diff_efactor*evdwl + bsq[itype][jtype]*Ws6inv;
+            dEdl_vdwl += (newton_pair || j < nlocal) ? dEdl_vdwl_ij : 0.5*dEdl_vdwl_ij;
           }
 
           if (gridflag)

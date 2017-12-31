@@ -35,11 +35,21 @@ using namespace LAMMPS_NS;
 ComputeSoftcoreDerivative::ComputeSoftcoreDerivative(LAMMPS *lmp, int narg, char **arg) : 
   Compute(lmp, narg, arg)
 {
-  if (narg != 3)
+  if (narg < 3 || narg > 4)
     error->all(FLERR,"Illegal compute softcore/derivative command");
 
   if (igroup)
     error->all(FLERR,"Compute softcore/derivative must use group all");
+
+  vdwlflag = coulflag = 1;
+  if (narg == 4) {
+    if (strcmp(arg[3],"vdwl") == 0)
+      coulflag = 0;
+    else if (strcmp(arg[3],"coul") == 0)
+      vdwlflag = 0;
+    else
+      error->all(FLERR,"Illegal compute softcore/grid command");
+  }
 
   // Retrieve all lambda-related pair styles:
   PairHybridSoftcore *hybrid = dynamic_cast<PairHybridSoftcore*>(force->pair);
@@ -86,15 +96,18 @@ double ComputeSoftcoreDerivative::compute_scalar()
       pair[i]->derivflag = save;
       std::swap(atom->f,f);
     }
-    one += pair[i]->dEdl;
+    if (vdwlflag) one += pair[i]->dEdl_vdwl;
+    if (coulflag) one += pair[i]->dEdl_coul;
   }
 
   MPI_Allreduce(&one,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
 
-  double volume = domain->xprd*domain->yprd*domain->zprd;
-  for (int i = 0; i < npairs; i++)
-    if (pair[i]->tail_flag)
-      scalar += pair[i]->detaildl/volume;
+  if (vdwlflag) {
+    double volume = domain->xprd*domain->yprd*domain->zprd;
+    for (int i = 0; i < npairs; i++)
+      if (pair[i]->tail_flag)
+        scalar += pair[i]->detaildl/volume;
+  }
 
   return scalar;
 }

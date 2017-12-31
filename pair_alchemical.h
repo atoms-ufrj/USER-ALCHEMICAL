@@ -48,7 +48,8 @@ class PairAlchemical : public Pair {
   double efactor;         // lambda^exponent_n
   double diff_efactor;    // derivative of efactor wrt lambda
   double detaildl;        // derivative of tail correct wrt lambda
-  double dEdl;            // derivative of potential energy (except tail) wrt lambda
+  double dEdl_vdwl;       // derivative of van der Waals energy (except tail) wrt lambda
+  double dEdl_coul;       // derivative of Coulomb energy wrt lambda
 
   void allocate();
   void add_node_to_grid(double);

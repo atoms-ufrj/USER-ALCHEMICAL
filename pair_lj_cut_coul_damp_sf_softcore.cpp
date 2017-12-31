@@ -86,12 +86,12 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
   int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,ecoul,Ws6inv,fpair;
   double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
-  double dEdl_ij,evdwlk,ecoulk;
+  double dEdl_vdwl_ij,dEdl_coul_ij,evdwlk,ecoulk;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   deriv_uptodate = eflag && derivflag;
   if (deriv_uptodate)
-    dEdl = 0.0;
+    dEdl_vdwl = dEdl_coul = 0.0;
 
   grid_uptodate = eflag && gridflag;
   if (grid_uptodate)
@@ -201,8 +201,14 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
             ecoul = 0.0;
 
           if (derivflag) {
-            dEdl_ij = diff_efactor*(evdwl + ecoul) + bsq[itype][jtype]*Ws6inv;
-            dEdl += newton ? dEdl_ij : 0.5*dEdl_ij;
+            if (lennard_jones) {
+              dEdl_vdwl_ij = diff_efactor*evdwl + bsq[itype][jtype]*efactor*forcelj*s6inv;
+              dEdl_vdwl += newton ? dEdl_vdwl_ij : 0.5*dEdl_vdwl_ij;
+            }
+            if (coulomb) {
+              dEdl_coul_ij = diff_efactor*ecoul + bsq[itype][jtype]*efactor*forcecoul*s6inv;
+              dEdl_coul += newton ? dEdl_coul_ij : 0.5*dEdl_coul_ij;
+            }
           }
 
           if (gridflag)

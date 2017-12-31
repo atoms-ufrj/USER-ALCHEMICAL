@@ -41,6 +41,7 @@ PairAlchemical::PairAlchemical(LAMMPS *lmp) : Pair(lmp)
   grid_uptodate = 0;
   derivflag = 0;
   deriv_uptodate = 0;
+  dEdl_vdwl = dEdl_coul = 0.0;
   allocate();
 }
 

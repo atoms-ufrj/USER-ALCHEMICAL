@@ -34,6 +34,8 @@ class ComputeSoftcoreDerivative : public Compute {
 
  private:
   int npairs;
+  int vdwlflag;
+  int coulflag;
   class PairAlchemical **pair;
 
   int nmax;
