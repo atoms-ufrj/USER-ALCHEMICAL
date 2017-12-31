@@ -121,7 +121,7 @@ void PairAlchemical::modify_params(int narg, char **arg)
   if (narg == 0)
     error->all(FLERR,"Illegal pair_modify command");
 
-  int nkwds = 6;
+  int nkwds = 7;
   char *keyword[nkwds];
   keyword[0] = (char*)"alpha";
   keyword[1] = (char*)"n";
@@ -129,6 +129,7 @@ void PairAlchemical::modify_params(int narg, char **arg)
   keyword[3] = (char*)"lambda";
   keyword[4] = (char*)"set_grid";
   keyword[5] = (char*)"add_node";
+  keyword[6] = (char*)"node";
 
   int ns = 0;
   int skip[narg];
@@ -160,7 +161,7 @@ void PairAlchemical::modify_params(int narg, char **arg)
     else if (m == 4) { // set_grid:
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal pair_modify command");
-      int nodes = force->numeric(FLERR,arg[iarg+1]);
+      int nodes = force->inumeric(FLERR,arg[iarg+1]);
       gridsize = 0;
       if (iarg+2+nodes > narg) 
         error->all(FLERR,"Illegal pair_modify command");
@@ -171,6 +172,17 @@ void PairAlchemical::modify_params(int narg, char **arg)
     else if (m == 5) { // add_node:
       if (iarg+2 > narg) error->all(FLERR,"Illegal pair_modify command");
       add_node_to_grid(force->numeric(FLERR,arg[iarg+1]));
+      iarg += 2;
+    }
+    else if (m == 6) { // node:
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal pair_modify command");
+      int node = force->inumeric(FLERR,arg[iarg+1]);
+      if (node < 1 || node > gridsize)
+        error->all(FLERR,"Provided node is out of range");
+      lambda = lambdanode[node-1];
+      efactor = pow(lambda, exponent_n);
+      diff_efactor = exponent_n*pow(lambda, exponent_n - 1.0);
       iarg += 2;
     }
     else // no keyword found - skip argument:
