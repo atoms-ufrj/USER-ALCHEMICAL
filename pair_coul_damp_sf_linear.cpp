@@ -49,23 +49,19 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype,intra;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vr,fr,ecoul,fpair;
-  double r,rsq,r2inv,r6inv,prefactor,forcecoul,factor_coul,diff_efactor;
-  int *ilist,*jlist,*numneigh,**firstneigh;
+  double r,rsq,r2inv,r6inv,prefactor,forcecoul,factor_coul;
+  int *ilist,*jlist,*numneigh,**firstneigh,uptodate,newton;
 
-  if (eflag && derivflag) {
+  deriv_uptodate = eflag && derivflag;
+  grid_uptodate = eflag && gridflag;
+  uptodate = grid_uptodate || deriv_uptodate;
+  if (uptodate)
     dEdl_coul = 0.0;
-    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
-    deriv_uptodate = 1;
-  }
 
-  if (eflag && gridflag) {
-    for (i = 0; i < gridsize; i++)
-      ecoulnode[i] = 0.0;
-    grid_uptodate = 1;
-  }
-
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
+  if (eflag || vflag)
+    ev_setup(eflag,vflag);
+  else
+    evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -122,11 +118,13 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
           forcecoul = prefactor*(fr - f_shift)*r;
         }
 
-        fpair = efactor*forcecoul*r2inv;
+        fpair = lambda*forcecoul*r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
-        if (newton_pair || j < nlocal) {
+
+        newton = newton_pair || j < nlocal;
+        if (newton) {
           f[j][0] -= delx*fpair;
           f[j][1] -= dely*fpair;
           f[j][2] -= delz*fpair;
@@ -135,23 +133,19 @@ void PairCoulDampSFLinear::compute(int eflag, int vflag)
         if (eflag) {
           ecoul = intra ? forcecoul : prefactor*(vr + r*f_shift - e_shift);
 
-          if (derivflag)
-            dEdl_coul += diff_efactor*ecoul;
-
-          if (gridflag) {
-            for (int k = 0; k < gridsize; k++)
-              if (newton_pair || j < nlocal)
-                ecoulnode[k] += lambdanode[k]*ecoul;
-              else
-                ecoulnode[k] += 0.5*lambdanode[k]*ecoul;
-          }
+          if (uptodate)
+            dEdl_coul += ecoul;
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             0.0,efactor*ecoul,fpair,delx,dely,delz);
-
+                             0.0,lambda*ecoul,fpair,delx,dely,delz);
       }
     }
+  }
+
+  if (grid_uptodate) {
+    for (i = 0; i < gridsize; i++)
+      ecoulnode[i] = lambdanode[i]*dEdl_coul;
   }
 
   if (vflag_fdotr) virial_fdotr_compute();

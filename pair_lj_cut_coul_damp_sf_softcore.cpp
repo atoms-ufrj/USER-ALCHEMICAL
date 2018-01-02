@@ -87,7 +87,7 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,ecoul,Ws6inv,fpair;
   double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,forcecoul,factor_lj,factor_coul;
   double dEdl_vdwl_ij,dEdl_coul_ij,evdwlk,ecoulk;
-  int *ilist,*jlist,*numneigh,**firstneigh;
+  int *ilist,*jlist,*numneigh,**firstneigh,lennard_jones,coulomb,newton;
 
   deriv_uptodate = eflag && derivflag;
   if (deriv_uptodate)
@@ -154,13 +154,13 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
         s6 = r6 + asq[itype][jtype];
         s6inv = 1.0/s6;
 
-        int lennard_jones = rsq < cut_ljsq[itype][jtype];
+        lennard_jones = rsq < cut_ljsq[itype][jtype];
         if (lennard_jones)
           forcelj = factor_lj*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
         else
           forcelj = 0.0;
 
-        int coulomb = rsq < cut_coulsq;
+        coulomb = rsq < cut_coulsq;
         if (coulomb) {
           prefactor = factor_coul*qtmp*q[j];
           if (intra)
@@ -181,7 +181,7 @@ void PairLJCutCoulDampSFSoftcore::compute(int eflag, int vflag)
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
 
-        int newton = newton_pair || j < nlocal;
+        newton = newton_pair || j < nlocal;
         if (newton) {
           f[j][0] -= delx*fpair;
           f[j][1] -= dely*fpair;

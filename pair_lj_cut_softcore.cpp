@@ -81,21 +81,19 @@ PairLJCutSoftcore::~PairLJCutSoftcore()
 void PairLJCutSoftcore::compute(int eflag, int vflag)
 {
   int i,j,k,ii,jj,inum,jnum,itype,jtype,intra;
-  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,vs,fs,evdwl,Ws6inv,fpair;
-  double s,rsq,r2inv,r4,r6,s6,s6inv,forcelj,prefactor,factor_lj;
-  double dEdl_vdwl_ij,diff_efactor;
+  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,Ws6inv,fpair;
+  double rsq,r2inv,r4,r6,s6,s6inv,forcelj,factor_lj;
+  double dEdl_vdwl_ij,evdwlk;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  if (eflag && derivflag) {
+  deriv_uptodate = eflag && derivflag;
+  if (deriv_uptodate)
     dEdl_vdwl = 0.0;
-    deriv_uptodate = 1;
-  }
 
-  if (eflag && gridflag) {
+  grid_uptodate = eflag && gridflag;
+  if (grid_uptodate)
     for (i = 0; i < gridsize; i++)
       evdwlnode[i] = 0.0;
-    grid_uptodate = 1;
-  }
 
   if (eflag || vflag)
     ev_setup(eflag,vflag);
@@ -143,15 +141,16 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
         s6 = r6 + asq[itype][jtype];
         s6inv = 1.0/s6;
 
-        forcelj = s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
-
-        Ws6inv = efactor*factor_lj*forcelj*s6inv;
+        forcelj = factor_lj*s6inv*(lj1[itype][jtype]*s6inv - lj2[itype][jtype]);
+        Ws6inv = efactor*forcelj*s6inv;
         fpair = Ws6inv*r4;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
-        if (newton_pair || j < nlocal) {
+
+        int newton = newton_pair || j < nlocal;
+        if (newton) {
           f[j][0] -= delx*fpair;
           f[j][1] -= dely*fpair;
           f[j][2] -= delz*fpair;
@@ -159,26 +158,20 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
 
         if (eflag) {
           evdwl = factor_lj*(s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
-                  offset[itype][jtype]);
+                             offset[itype][jtype]);
 
           if (derivflag) {
-            dEdl_vdwl_ij = diff_efactor*evdwl + bsq[itype][jtype]*Ws6inv;
-            dEdl_vdwl += (newton_pair || j < nlocal) ? dEdl_vdwl_ij : 0.5*dEdl_vdwl_ij;
+            dEdl_vdwl_ij = diff_efactor*evdwl + bsq[itype][jtype]*efactor*forcelj*s6inv;
+            dEdl_vdwl += newton ? dEdl_vdwl_ij : 0.5*dEdl_vdwl_ij;
           }
 
           if (gridflag)
             for (k = 0; k < gridsize; k++) {
               s6 = r6 + asqn[itype][jtype][k];
               s6inv = 1.0/s6;
-
-              evdwl = s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
-                      offset[itype][jtype];
-              evdwl *= efactorn[k]*factor_lj;
-
-              if (newton_pair || j < nlocal)
-                evdwlnode[k] += evdwl;
-              else
-                evdwlnode[k] += 0.5*evdwl;
+              evdwlk = factor_lj*(s6inv*(lj3[itype][jtype]*s6inv - lj4[itype][jtype]) -
+                                  offset[itype][jtype]);
+              evdwlnode[k] += newton ? evdwlk : 0.5*evdwlk;
             }
         }
 
@@ -187,6 +180,10 @@ void PairLJCutSoftcore::compute(int eflag, int vflag)
       }
     }
   }
+
+  if (grid_uptodate)
+    for (k = 0; k < gridsize; k++)
+      evdwlnode[k] *= efactorn[k];
 
   if (vflag_fdotr) virial_fdotr_compute();
 }
@@ -598,7 +595,7 @@ void PairLJCutSoftcore::init_style()
   for (int k = 0; k < gridsize; k++) {
     lambda = lambdanode[k];
     efactorn[k] = efactor = pow(lambda, exponent_n);
-    diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
+    diff_efactor = exponent_n*pow(lambda, exponent_n - 1.0);
     etailnode[k] = 0.0;
     for (int i = 1; i <= n; i++)
       for (int j = i; j <= n; j++)
@@ -612,17 +609,15 @@ void PairLJCutSoftcore::init_style()
 
   lambda = save;
   efactor = pow(lambda, exponent_n);
-  diff_efactor = exponent_n*pow(lambda,exponent_n - 1.0);
-
-  if (tail_flag) {
-    detaildl = 0.0;
-    for (int i = 1; i <= n; i++)
-      for (int j = i; j <= n; j++)
-        if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
-          init_one(i,j);
+  diff_efactor = exponent_n*pow(lambda, exponent_n - 1.0);
+  detaildl = 0.0;
+  for (int i = 1; i <= n; i++)
+    for (int j = i; j <= n; j++)
+      if (setflag[i][j] || (setflag[i][i] && setflag[j][j])) {
+        init_one(i,j);
+        if (tail_flag)
           detaildl += i == j ? detaildl_ij : 2.0*detaildl_ij;
-        }
-  }
+      }
 
   PairAlchemical::init_style();
 }
@@ -665,8 +660,7 @@ double PairLJCutSoftcore::atanx_x(double x)
 double PairLJCutSoftcore::init_one(int i, int j)
 {
   if (setflag[i][j] == 0) {
-    epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],
-                               sigma[i][i],sigma[j][j]);
+    epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],sigma[i][i],sigma[j][j]);
     sigma[i][j] = mix_distance(sigma[i][i],sigma[j][j]);
     cut_lj[i][j] = mix_distance(cut_lj[i][i],cut_lj[j][j]);
   }
@@ -885,7 +879,6 @@ double PairLJCutSoftcore::single(int i, int j, int itype, int jtype, double rsq,
                                            double &fforce)
 {
   double r4,s6,s6inv,forcelj,philj;
-  double s,vs,fs,prefactor;
 
   r4 = rsq*rsq;
   s6 = rsq*r4 + asq[itype][jtype];

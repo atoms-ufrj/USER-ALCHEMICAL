@@ -34,6 +34,7 @@ PairAlchemical::PairAlchemical(LAMMPS *lmp) : Pair(lmp)
   exponent_p = 1.0;
   lambda = 1.0;
   efactor = 1.0;
+  diff_efactor = 0.0;
   detaildl = 0.0;
 
   gridflag = 0;
@@ -79,7 +80,6 @@ void PairAlchemical::allocate()
   memory->create(lambdanode,0,"pair_softcore:lambdanode");
   memory->create(evdwlnode,0,"pair_softcore:evdwlnode");
   memory->create(ecoulnode,0,"pair_softcore:ecoulnode");
-  memory->create(ecoulnode,0,"pair_softcore:ecoulnode");
   memory->create(etailnode,0,"pair_softcore:etailnode");
 }
 
@@ -94,8 +94,11 @@ void PairAlchemical::add_node_to_grid(double lambda_value)
   if ( (lambda_value < 0.0) || (lambda_value > 1.0) )
     error->all(FLERR,"Coupling parameter value is out of range");
 
-  double *backup = new double[gridsize];
-  memcpy(backup,lambdanode,sizeof(double)*gridsize);
+  double backup[4][gridsize];
+  memcpy(&backup[0],lambdanode,sizeof(double)*gridsize);
+  memcpy(&backup[1],evdwlnode,sizeof(double)*gridsize);
+  memcpy(&backup[2],ecoulnode,sizeof(double)*gridsize);
+  memcpy(&backup[3],etailnode,sizeof(double)*gridsize);
 
   gridsize++;
   memory->grow(lambdanode,gridsize,"pair_softcore:lambdanode");
@@ -105,14 +108,21 @@ void PairAlchemical::add_node_to_grid(double lambda_value)
 
   j = 0;
   for (i = 0; i < gridsize-1; i++)
-    if (backup[i] < lambda_value) {
-      lambdanode[i] = backup[i];
+    if (backup[0][i] < lambda_value) {
+      lambdanode[i] = backup[0][i];
+      evdwlnode[i] = backup[1][i];
+      ecoulnode[i] = backup[2][i];
+      etailnode[i] = backup[3][i];
       j = i+1;
-    } else
-      lambdanode[i+1] = backup[i];
+    }
+    else {
+      lambdanode[i+1] = backup[0][i];
+      evdwlnode[i+1] = backup[1][i];
+      ecoulnode[i+1] = backup[2][i];
+      etailnode[i+1] = backup[3][i];
+    }
   lambdanode[j] = lambda_value;
   evdwlnode[j] = ecoulnode[j] = etailnode[j] = 0.0;
-  delete [] backup;
 }
 
 /* ---------------------------------------------------------------------- */
